@@ -1,0 +1,24 @@
+{
+  "name": "reversible",
+  "version": "0.1.0",
+  "description": "Reversible — a browser-based acid groovebox: bassline synths plus drum machines with a 16-step sequencer.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "probe": "PROBE_OUT=1 vitest run -c tools/vitest.config.ts"
+  },
+  "devDependencies": {
+    "fast-check": "3.23.1",
+    "node-web-audio-api": "^1.0.9",
+    "pngjs": "^7.0.0",
+    "typescript": "5.6.3",
+    "vite": "^7.1.12",
+    "vite-plugin-singlefile": "^2.3.0",
+    "vitest": "^4.1.9"
+  }
+}
