@@ -1,5 +1,5 @@
 /** Effects section: distortion / delay / PCF / compressor (master bus). */
-import { el, slider } from './dom';
+import { el, slider, refreshSlider } from './dom';
 import type { UiContext, ViewHandle } from './context';
 import type { EffectName } from '../state/actions';
 
@@ -67,7 +67,10 @@ export function createEffectsSection(ctx: UiContext): ViewHandle {
         toggles.get(fx.name)!.classList.toggle('on', group.on === true);
         for (const p of fx.params) {
           const input = sliders.get(`${fx.name}.${p.key}`)!;
-          if (document.activeElement !== input) input.value = String(group[p.key]);
+          if (document.activeElement !== input) {
+            input.value = String(group[p.key]);
+            refreshSlider(input);
+          }
         }
       }
     },

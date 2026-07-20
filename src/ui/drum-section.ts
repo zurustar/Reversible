@@ -1,5 +1,5 @@
 /** Drum machine section: per-voice controls (top) + step grid (bottom). */
-import { el, slider } from './dom';
+import { el, slider, refreshSlider } from './dom';
 import type { UiContext, ViewHandle } from './context';
 import {
   STEP_COUNT,
@@ -75,7 +75,10 @@ export function createDrumSection(ctx: UiContext, machineIndex: number): ViewHan
         for (const [mapKey, input] of paramInputs) {
           if (!mapKey.startsWith(`${id}.`)) continue;
           const key = mapKey.slice(id.length + 1);
-          if (document.activeElement !== input) input.value = String(params[key] ?? 0.5);
+          if (document.activeElement !== input) {
+            input.value = String(params[key] ?? 0.5);
+            refreshSlider(input);
+          }
         }
         const steps = machine.voices[id].steps;
         drumButtons[id].forEach((btn, i) => {

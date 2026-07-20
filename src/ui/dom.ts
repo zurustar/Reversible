@@ -30,17 +30,25 @@ export interface SliderOptions {
   def?: number;
   /** Enable the center/default detent. Defaults to true when `def` is 0.5 (a natural center). */
   snap?: boolean;
-  /** Format the raw 0..1 value for the readout shown while dragging/hovering. Defaults to percent. */
+  /** Format the raw 0..1 value for the always-visible readout. Defaults to a 0..100 number. */
   format?: (v: number) => string;
 }
 
+// Each fader carries its readout + formatter so refreshSlider() can resync the
+// displayed number whenever code sets input.value directly (e.g. in update()).
+const sliderMeta = new WeakMap<HTMLInputElement, { readout: HTMLElement; fmt: (v: number) => string }>();
+
+/** Update a fader's always-visible number to match its current input.value. */
+export function refreshSlider(input: HTMLInputElement): void {
+  const m = sliderMeta.get(input);
+  if (m) m.readout.textContent = m.fmt(Number(input.value));
+}
+
 /**
- * A 0..1 range fader. To make "return to the right spot" easy without adding
- * visible chrome (see UX note), the fader also:
- *  - shows its current value in the label while focused / hovered / dragging,
+ * A 0..1 range fader with an always-visible value readout below it. To make
+ * "return a control to the right spot" easy, the fader also:
  *  - snaps to its default when dragged near it (center detent, opt-in via `snap`),
  *  - resets to its default on double-click / double-tap.
- * The idle appearance (just the label name) is unchanged from a plain fader.
  */
 export function slider(
   label: string,
@@ -60,42 +68,21 @@ export function slider(
     step: '0.01',
     value: String(value),
   });
-
-  let hovering = false;
-  const showValue = (): void => {
-    labelSpan.textContent = fmt(Number(input.value));
-    labelSpan.classList.add('is-value');
-  };
-  const showName = (): void => {
-    labelSpan.textContent = label;
-    labelSpan.classList.remove('is-value');
-  };
-  const idle = (): void => {
-    if (!hovering && document.activeElement !== input) showName();
-  };
+  const readout = el('span', { class: 'ctl-value', text: fmt(value) });
+  sliderMeta.set(input, { readout, fmt });
 
   input.addEventListener('input', () => {
     const snapped = applyDetent(Number(input.value), def, snap);
     if (snapped !== Number(input.value)) input.value = String(snapped);
     onInput(snapped);
-    showValue();
+    refreshSlider(input);
   });
   input.addEventListener('dblclick', () => {
     input.value = String(def);
     onInput(def);
-    showValue();
-  });
-  input.addEventListener('focus', showValue);
-  input.addEventListener('blur', idle);
-  input.addEventListener('mouseenter', () => {
-    hovering = true;
-    showValue();
-  });
-  input.addEventListener('mouseleave', () => {
-    hovering = false;
-    idle();
+    refreshSlider(input);
   });
 
-  const wrap = el('label', { class: 'ctl' }, [labelSpan, input]);
+  const wrap = el('label', { class: 'ctl' }, [labelSpan, input, readout]);
   return { wrap, input };
 }

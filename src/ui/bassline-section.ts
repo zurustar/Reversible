@@ -1,5 +1,5 @@
 /** Bassline section: sound controls (top) + its sequencer / piano roll (bottom). */
-import { el, slider } from './dom';
+import { el, slider, refreshSlider } from './dom';
 import type { UiContext, ViewHandle } from './context';
 import { pitchClassName } from './context';
 import { STEP_COUNT, OCTAVE_BANDS, DEFAULT_OCTAVE_BAND, BASSLINE_LABELS } from '../domain/constants';
@@ -149,6 +149,7 @@ export function createBasslineSection(ctx: UiContext, trackIndex: number): ViewH
         if (document.activeElement !== input) {
           const v = p[key];
           input.value = String(typeof v === 'number' ? v : (KNOBS.find((k) => k.key === key)?.def ?? 0.5));
+          refreshSlider(input);
         }
       }
 
