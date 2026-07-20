@@ -161,6 +161,7 @@ button.playing { background: linear-gradient(180deg, #ff8a3d, var(--on)); color:
   width: 20px;
   height: 64px;
   accent-color: var(--accent);
+  cursor: ns-resize;
 }
 .bassline-controls .wave { width: 100%; }
 .song-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
@@ -200,10 +201,14 @@ button.pat.on { background: var(--accent); color: #1a1a1e; font-weight: 700; bor
   width: 18px;
   height: 58px;
   accent-color: var(--accent);
+  cursor: ns-resize;
 }
 .ctl { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); width: 110px; }
-.ctl input[type="range"] { width: 100%; accent-color: var(--accent); }
+.ctl input[type="range"] { width: 100%; accent-color: var(--accent); cursor: ew-resize; }
 .ctl-label { text-transform: uppercase; letter-spacing: 0.5px; }
+/* While dragging / hovering / focused, the label shows the live value in its place
+   (no extra element, so the fader layout never shifts). */
+.ctl-label.is-value { color: var(--accent2); text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 
 select.wave { background: var(--panel2); color: var(--text); border: 1px solid var(--grid-line); border-radius: 6px; padding: 6px; }
 

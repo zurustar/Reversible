@@ -10,8 +10,13 @@ const PITCH_CLASSES = 12;
 // octave shown as an arrow (accessible, not color-only): low = down, mid = dot, high = up
 const OCT_LABELS = ['↓', '·', '↑'];
 const OCT_GLYPH = ['↓', '', '↑']; // glyph drawn inside the lit note cell (mid = none)
-const KNOBS: Array<{ key: keyof BasslineParams; label: string; def: number }> = [
-  { key: 'tune', label: 'Tune', def: 0.5 },
+// Tune is ±1200 cents (0.5 = 0). Showing cents makes "back to pitch 0" unambiguous.
+const centsFmt = (v: number): string => {
+  const cents = Math.round((v * 2 - 1) * 1200);
+  return cents > 0 ? `+${cents}` : String(cents);
+};
+const KNOBS: Array<{ key: keyof BasslineParams; label: string; def: number; fmt?: (v: number) => string }> = [
+  { key: 'tune', label: 'Tune', def: 0.5, fmt: centsFmt },
   { key: 'cutoff', label: 'Cutoff', def: 0.45 },
   { key: 'resonance', label: 'Resonance', def: 0.5 },
   { key: 'envMod', label: 'Env Mod', def: 0.5 },
@@ -38,7 +43,10 @@ export function createBasslineSection(ctx: UiContext, trackIndex: number): ViewH
     el('label', { class: 'ctl' }, [el('span', { class: 'ctl-label', text: 'Waveform' }), wave]),
   ]);
   for (const knob of KNOBS) {
-    const { wrap, input } = slider(knob.label, knob.def, (v) => ctx.sound.setBasslineParam(trackIndex, knob.key, v));
+    const { wrap, input } = slider(knob.label, knob.def, (v) => ctx.sound.setBasslineParam(trackIndex, knob.key, v), {
+      def: knob.def,
+      format: knob.fmt,
+    });
     inputs.set(knob.key, input);
     controls.append(wrap);
   }
