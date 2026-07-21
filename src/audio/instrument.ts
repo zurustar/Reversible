@@ -2,8 +2,12 @@
 import type { TriggerEvent } from '../domain/types';
 
 export interface Instrument {
-  /** Schedule sound at AudioContext time `when` (look-ahead). */
-  trigger(event: TriggerEvent, when: number): void;
+  /**
+   * Schedule sound at AudioContext time `when` (look-ahead). `stepDur` is the
+   * length of one sequencer step in seconds; a bassline note that slides holds
+   * for this long (tie) before releasing. Instruments that don't tie ignore it.
+   */
+  trigger(event: TriggerEvent, when: number, stepDur?: number): void;
   setParam(key: string, value: number | string): void;
   connect(destination: AudioNode): void;
 }

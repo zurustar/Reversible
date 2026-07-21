@@ -13,11 +13,12 @@ export function triggerStep(
   pattern: Pattern,
   index: number,
   when: number,
+  stepDur = 0,
 ): void {
   for (let t = 0; t < pattern.bassline.length; t++) {
     const step = pattern.bassline[t].steps[index];
     if (step && step.on) {
-      getInstrument(`bassline-${t}`)?.trigger({ note: step.note, accent: step.accent, slide: step.slide }, when);
+      getInstrument(`bassline-${t}`)?.trigger({ note: step.note, accent: step.accent, slide: step.slide }, when, stepDur);
     }
   }
   for (let m = 0; m < pattern.drums.length; m++) {
@@ -120,7 +121,7 @@ export class Scheduler {
 
   private scheduleStep(index: number, when: number, state: AppState): void {
     const pattern = patternById(state, this.playingPatternId(state));
-    triggerStep((id) => this.engine.getInstrument(id), pattern, index, when);
+    triggerStep((id) => this.engine.getInstrument(id), pattern, index, when, sixteenthSec(state.song.bpm));
   }
 
   /** Called by a rAF loop: advance the displayed current step to match the audio clock. */

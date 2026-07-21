@@ -6,6 +6,7 @@
  */
 import type { BasslineFilter } from './instrument';
 import { envModAmount, accentAmount } from './param-maps';
+import { cancelAndHold } from './automation';
 
 const PROCESSOR_SRC = `
 class BasslineLadderProcessor extends AudioWorkletProcessor {
@@ -78,7 +79,7 @@ class WorkletBasslineFilter implements BasslineFilter {
 
     this.resonanceParam.setValueAtTime(Math.min(1, Math.max(0, opts.resonance)), when);
     const c = this.cutoffParam;
-    c.cancelScheduledValues(when);
+    cancelAndHold(c, when);
     c.setValueAtTime(peak, when);
     c.exponentialRampToValueAtTime(Math.max(0.0006, base), when + decay);
   }

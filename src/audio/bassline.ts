@@ -3,6 +3,7 @@ import type { BasslineParams, Waveform, TriggerEvent } from '../domain/types';
 import type { Instrument, BasslineFilter } from './instrument';
 import { BiquadBasslineFilter } from './bassline-filter';
 import { noteToFreq, tuneToCents, decayToSeconds, levelToGain, accentAmount } from './param-maps';
+import { cancelAndHold } from './automation';
 import { clamp01 } from '../util/num';
 
 const ACCENT_GAIN_BOOST = 0.4;
@@ -28,6 +29,7 @@ export class BasslineVoice implements Instrument {
   private params: BasslineParams;
   private lastNote: number | null = null;
   private lastFreq = 0;
+  private slideInto = false; // did the previous note request a slide INTO this one?
 
   /** `filter` is injected (Biquad by default, or an AudioWorklet ladder filter). */
   constructor(ctx: BaseAudioContext, params: BasslineParams, filter?: BasslineFilter) {
@@ -79,13 +81,16 @@ export class BasslineVoice implements Instrument {
     }
   }
 
-  trigger(event: TriggerEvent, when: number): void {
+  trigger(event: TriggerEvent, when: number, stepDur = 0): void {
     const note = event.note ?? 12;
     const freq = noteToFreq(note, tuneToCents(this.params.tune));
-    const slide = event.slide === true && this.lastNote !== null && this.lastFreq > 0;
+    // Slide semantics: the step with slide ON glides/ties INTO the next note, so
+    // THIS note is legato when the PREVIOUS step requested a slide (not its own flag).
+    const slide = this.slideInto && this.lastNote !== null && this.lastFreq > 0;
+    const willSlide = event.slide === true; // this note ties into the next one
 
     const f = this.osc.frequency;
-    f.cancelScheduledValues(when);
+    cancelAndHold(f, when);
     if (slide) {
       // glide from the previous pitch and REACH the target exactly within the glide time
       // (setTargetAtTime only asymptotes and can leave the note off-pitch = out of tune).
@@ -97,6 +102,7 @@ export class BasslineVoice implements Instrument {
     }
     this.lastNote = note;
     this.lastFreq = freq;
+    this.slideInto = event.slide === true; // this note slides into the next one
 
     // Filter envelope (skip re-trigger on slide to keep legato feel)
     if (!slide) {
@@ -110,20 +116,27 @@ export class BasslineVoice implements Instrument {
       });
     }
 
-    // Amp envelope — always sounds. Slide = legato (no re-attack from zero),
-    // just re-assert the level and let it decay while the pitch glides.
+    // Amp envelope.
+    //  - fresh note: attack from 0 to peak
+    //  - legato (slid into): continue at peak, no re-attack click
+    //  - if THIS note slides into the next: hold at peak for one step (tie), so
+    //    the tied group sounds as one longer note; release only if no next note
+    //    arrives (the next note's trigger cancels/replaces this release).
     const g = this.vca.gain;
     let peak = 1;
     if (event.accent) peak = Math.min(1.5, 1 + accentAmount(this.params.accent) * ACCENT_GAIN_BOOST);
     const decay = Math.max(0.05, decayToSeconds(this.params.decay));
-    g.cancelScheduledValues(when);
+    cancelAndHold(g, when);
     if (slide) {
-      // tie into the previous note: hold near peak (no click), then decay
-      g.setValueAtTime(Math.max(0.0001, peak * 0.85), when);
-      g.exponentialRampToValueAtTime(0.0001, when + decay);
+      g.setValueAtTime(peak, when); // legato entry from the held previous note
     } else {
       g.setValueAtTime(0.0001, when);
       g.linearRampToValueAtTime(peak, when + 0.005);
+    }
+    if (willSlide && stepDur > 0) {
+      g.setValueAtTime(peak, when + stepDur); // sustain across this step (tie)
+      g.exponentialRampToValueAtTime(0.0001, when + stepDur + decay);
+    } else {
       g.exponentialRampToValueAtTime(0.0001, when + decay);
     }
   }

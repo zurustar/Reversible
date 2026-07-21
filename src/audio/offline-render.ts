@@ -47,9 +47,10 @@ export async function renderSongToBuffer(state: AppState, opts: RenderOptions = 
   const ctx = new OfflineCtor(1, frames, sampleRate);
 
   const graph = await buildAudioGraph(ctx, state.song);
+  const stepDur = sixteenthSec(bpm);
   for (const ev of events) {
     const pattern = patternById(state, ev.patternId);
-    triggerStep((id) => graph.instruments.get(id), pattern, ev.index, ev.when);
+    triggerStep((id) => graph.instruments.get(id), pattern, ev.index, ev.when, stepDur);
   }
   return ctx.startRendering();
 }

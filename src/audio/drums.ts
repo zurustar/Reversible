@@ -51,7 +51,7 @@ export class DrumMachine implements Instrument {
     if (p) p[key] = clamp01(value);
   }
 
-  trigger(event: TriggerEvent, when: number): void {
+  trigger(event: TriggerEvent, when: number, _stepDur?: number): void {
     const id = event.voiceId as DrumVoiceId | undefined;
     if (!id || !(id in this.params)) return;
     const accent = event.accent === true;

@@ -1,6 +1,7 @@
 /** BiquadFilter-based Bassline filter stage (MVP implementation of BasslineFilter). */
 import type { BasslineFilter } from './instrument';
 import { cutoffToHz, resonanceToQ, decayToSeconds, envModAmount, accentAmount } from './param-maps';
+import { cancelAndHold } from './automation';
 
 export class BiquadBasslineFilter implements BasslineFilter {
   readonly input: BiquadFilterNode;
@@ -24,7 +25,7 @@ export class BiquadBasslineFilter implements BasslineFilter {
     const decay = decayToSeconds(opts.decay);
 
     this.input.Q.setValueAtTime(resonanceToQ(opts.resonance), when);
-    f.cancelScheduledValues(when);
+    cancelAndHold(f, when);
     f.setValueAtTime(peak, when);
     f.exponentialRampToValueAtTime(Math.max(30, base), when + decay);
   }
