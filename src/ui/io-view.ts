@@ -1,5 +1,22 @@
 import { el } from './dom';
 import type { UiContext, ViewHandle } from './context';
+import { renderSongToWav } from '../audio/offline-render';
+
+function wavFilename(name: string): string {
+  const base = name.trim().replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40) || 'song';
+  return `${base}.wav`;
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 export function createIoView(ctx: UiContext): ViewHandle {
   const textarea = el('textarea', { placeholder: 'ここに曲データ(JSON)を貼り付けて「テキストから読み込み」' }) as HTMLTextAreaElement;
@@ -9,6 +26,25 @@ export function createIoView(ctx: UiContext): ViewHandle {
     msg.textContent = text;
     msg.className = `msg ${kind}`;
   }
+
+  const wavBtn = el('button', {
+    text: 'WAV書き出し (音声ファイル)',
+    onclick: async () => {
+      const button = wavBtn as HTMLButtonElement;
+      button.disabled = true;
+      setMsg('音声をレンダリング中…', 'ok');
+      try {
+        const state = ctx.store.getState();
+        const blob = await renderSongToWav(state);
+        downloadBlob(blob, wavFilename(state.song.name));
+        setMsg('WAV をダウンロードしました。', 'ok');
+      } catch (err) {
+        setMsg(`WAV 書き出しに失敗しました: ${err instanceof Error ? err.message : String(err)}`, 'err');
+      } finally {
+        button.disabled = false;
+      }
+    },
+  }) as HTMLButtonElement;
 
   const exportBtn = el('button', {
     text: 'エクスポート (ダウンロード)',
@@ -49,7 +85,8 @@ export function createIoView(ctx: UiContext): ViewHandle {
   });
 
   const root = el('div', { class: 'panel io' }, [
-    el('h2', { text: 'エクスポート / インポート (JSON)' }),
+    el('h2', { text: 'エクスポート / インポート' }),
+    el('div', { class: 'io-buttons' }, [wavBtn]),
     textarea,
     el('div', { class: 'io-buttons' }, [exportBtn, copyBtn, importBtn, fileInput]),
     msg,

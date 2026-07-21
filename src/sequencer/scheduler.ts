@@ -2,8 +2,34 @@
 import { STEP_COUNT, DRUM_VOICE_IDS } from '../domain/constants';
 import type { Store } from '../state/store';
 import type { AppState } from '../state/actions';
+import type { Pattern } from '../domain/types';
 import { patternById } from '../state/reducer';
 import type { Instrument } from '../audio/instrument';
+
+/** Schedule one 16th-note step of a pattern (bassline + drum triggers) at absolute time `when`.
+ * Shared by the live Scheduler and the offline WAV renderer. */
+export function triggerStep(
+  getInstrument: (id: string) => Instrument | undefined,
+  pattern: Pattern,
+  index: number,
+  when: number,
+): void {
+  for (let t = 0; t < pattern.bassline.length; t++) {
+    const step = pattern.bassline[t].steps[index];
+    if (step && step.on) {
+      getInstrument(`bassline-${t}`)?.trigger({ note: step.note, accent: step.accent, slide: step.slide }, when);
+    }
+  }
+  for (let m = 0; m < pattern.drums.length; m++) {
+    const drums = getInstrument(`drums-${m}`);
+    if (!drums) continue;
+    const machine = pattern.drums[m];
+    for (const voiceId of DRUM_VOICE_IDS) {
+      const ds = machine.voices[voiceId]?.steps[index];
+      if (ds && ds.on) drums.trigger({ voiceId, accent: ds.accent ?? false }, when);
+    }
+  }
+}
 
 export const LOOKAHEAD_MS = 25;
 export const SCHEDULE_AHEAD_SEC = 0.1;
@@ -94,25 +120,7 @@ export class Scheduler {
 
   private scheduleStep(index: number, when: number, state: AppState): void {
     const pattern = patternById(state, this.playingPatternId(state));
-    for (let t = 0; t < pattern.bassline.length; t++) {
-      const step = pattern.bassline[t].steps[index];
-      if (step && step.on) {
-        this.engine
-          .getInstrument(`bassline-${t}`)
-          ?.trigger({ note: step.note, accent: step.accent, slide: step.slide }, when);
-      }
-    }
-    for (let m = 0; m < pattern.drums.length; m++) {
-      const drums = this.engine.getInstrument(`drums-${m}`);
-      if (!drums) continue;
-      const machine = pattern.drums[m];
-      for (const voiceId of DRUM_VOICE_IDS) {
-        const ds = machine.voices[voiceId]?.steps[index];
-        if (ds && ds.on) {
-          drums.trigger({ voiceId, accent: ds.accent ?? false }, when);
-        }
-      }
-    }
+    triggerStep((id) => this.engine.getInstrument(id), pattern, index, when);
   }
 
   /** Called by a rAF loop: advance the displayed current step to match the audio clock. */

@@ -84,12 +84,15 @@ class WorkletBasslineFilter implements BasslineFilter {
   }
 }
 
-let modulePromise: Promise<boolean> | null = null;
+// addModule is per-context, so cache the registration per context (a live
+// AudioContext and any OfflineAudioContext each need their own module load).
+const modulePromises = new WeakMap<BaseAudioContext, Promise<boolean>>();
 
 /** Try to build a worklet-based Bassline filter. Returns null on any failure (caller falls back to Biquad). */
 export async function createWorkletBasslineFilter(ctx: BaseAudioContext): Promise<BasslineFilter | null> {
   try {
     if (!('audioWorklet' in ctx)) return null;
+    let modulePromise = modulePromises.get(ctx);
     if (!modulePromise) {
       const blob = new Blob([PROCESSOR_SRC], { type: 'application/javascript' });
       const url = URL.createObjectURL(blob);
@@ -98,6 +101,7 @@ export async function createWorkletBasslineFilter(ctx: BaseAudioContext): Promis
         .then(() => true)
         .catch(() => false)
         .finally(() => URL.revokeObjectURL(url));
+      modulePromises.set(ctx, modulePromise);
     }
     const ok = await modulePromise;
     if (!ok) return null;

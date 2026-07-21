@@ -1,12 +1,8 @@
 /** AudioEngine facade (U2, C-04). Manages AudioContext, master out, instruments. */
 import type { Instrument } from './instrument';
-import { BasslineVoice } from './bassline';
-import { DrumMachine } from './drums';
 import type { Song } from '../domain/types';
-import { selectedInitialParams } from './engine-helpers';
-import { createWorkletBasslineFilter } from './bassline-worklet';
+import { buildAudioGraph } from './graph';
 import { FxChain } from './effects';
-import { DRUM_MACHINE_STYLES } from '../domain/constants';
 import type { EffectsParams } from '../domain/types';
 
 export class AudioEngine {
@@ -24,32 +20,11 @@ export class AudioEngine {
     try {
       const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new Ctor();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.9;
-      // master -> effects chain -> destination
-      this.fx = new FxChain(this.ctx);
-      this.master.connect(this.fx.input);
-      this.fx.connect(this.ctx.destination);
-      this.fx.apply(song.effects);
-
-      const { basslineParams, drumParams } = selectedInitialParams(song);
-      // One Bassline voice per track. Build all worklet filters up front; only use them if
-      // EVERY voice got one, so both basses share the same filter type (consistent pitch/tone).
-      const workletFilters = await Promise.all(basslineParams.map(() => createWorkletBasslineFilter(this.ctx!)));
-      const allWorklet = workletFilters.every((f) => f !== null);
-      this.filterKind = allWorklet ? 'worklet' : 'biquad';
-      for (let i = 0; i < basslineParams.length; i++) {
-        const filter = allWorklet ? workletFilters[i]! : undefined; // undefined -> voice builds its own Biquad
-        const voice = new BasslineVoice(this.ctx, basslineParams[i], filter);
-        voice.connect(this.master);
-        this.instruments.set(`bassline-${i}`, voice);
-      }
-      for (let i = 0; i < drumParams.length; i++) {
-        const style = DRUM_MACHINE_STYLES[i] ?? 'analog';
-        const drums = new DrumMachine(this.ctx, drumParams[i], style);
-        drums.connect(this.master);
-        this.instruments.set(`drums-${i}`, drums);
-      }
+      const graph = await buildAudioGraph(this.ctx, song);
+      this.master = graph.master;
+      this.fx = graph.fx;
+      this.instruments = graph.instruments;
+      this.filterKind = graph.filterKind;
       this.initialized = true;
       return true;
     } catch (err) {
