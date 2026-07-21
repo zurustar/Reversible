@@ -14,7 +14,15 @@ export function createSongSection(ctx: UiContext): ViewHandle {
   const dupBtn = el('button', { text: 'Duplicate', onclick: () => ctx.store.dispatch({ type: 'duplicatePattern' }) });
   const delBtn = el('button', {
     text: 'Delete',
-    onclick: () => ctx.store.dispatch({ type: 'deletePattern', id: ctx.store.getState().selectedPatternId }),
+    onclick: () => {
+      const state = ctx.store.getState();
+      const id = state.selectedPatternId;
+      const i = state.song.patterns.findIndex((p) => p.id === id);
+      const label = `P${i + 1}`;
+      // Guard against an accidental click (e.g. meaning to press Duplicate): confirm first.
+      if (!window.confirm(`パターン ${label} を削除します。よろしいですか?\nこの操作は元に戻せません。`)) return;
+      ctx.store.dispatch({ type: 'deletePattern', id });
+    },
   });
   const addToChainBtn = el('button', {
     text: '+ Chain に追加',
