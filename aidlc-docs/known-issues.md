@@ -1,5 +1,37 @@
 # Known Issues / 修正事項
 
+## ☑ 音色設定がパターン単位で効かない — 2026-08-15 修正済み(GitHub #1 / #2)
+
+**症状**
+- #1: WAV書き出し時に Tune の設定が反映されない。
+- #2: Tune などの設定が曲全体に対するものになっている(パターンごとに変えられない)。
+
+**原因(両者で共通、1箇所)**: 音色パラメータはデータモデル上は Pattern 内に持っていたが、
+楽器ノードは曲で1組しか作らず、その初期値を **`song.patterns[0]` に固定**していた
+(`engine-helpers.ts` の `selectedInitialParams`)。以降パラメータが楽器へ届くのは
+スライダー操作時だけだったため、
+- 選択中パターンが2番目以降だと WAV は1番目のパターンの Tune でレンダリングされる(#1)
+- パターンを切り替えても音色が追従せず、実質「曲全体で1つの設定」として振る舞う(#2)
+
+**修正**
+- `applyPatternParams()`(`sequencer/scheduler.ts`)を追加。いま鳴っているパターンの
+  音色設定を楽器へ適用する。ライブ再生と WAV 書き出しが同じ関数を共有する。
+- Scheduler は毎ステップ適用(ソングチェーンの進行・編集対象パターンの切替に追従)。
+  offline-render は各ステップの時刻を指定して適用(オフラインは `currentTime` が進まないため
+  `setValueAtTime` でスケジュールする)。
+- `BasslineVoice` を波形ごとのオシレータ + ゲインのクロスフェード構成に変更し、waveform も
+  スケジュール可能にした(`osc.type` は即時変更しかできず、パターン単位にできないため)。
+- グラフ構築時の初期パラメータは「最初に鳴るパターン」から取る(`initialInstrumentParams`)。
+- ソングモードで「鳴っていないパターン」のスライダーを触っても、鳴っている音は変わらない
+  (`SoundDesignService.editedPatternIsSounding`)。
+
+**回帰テスト**: `tests/unit/offline-render-params.test.ts`(実レンダリング+自己相関でピッチ検証)、
+`tests/unit/scheduler-pattern-params.test.ts`。修正前は前者が 130.9Hz(=1番目のパターンの Tune)を
+返して失敗、修正後は 261.6Hz(=対象パターンの Tune +1200cents)。
+`npm run probe` の実測値は修正前後で一致(音の変化なし)。
+
+**残: 曲全体スコープのまま**: `bpm` / `swing` / `effects`(マスターエフェクト)。
+
 ## スライダーの効き(音質への影響)監査 — 2026-07-11(実測)
 
 **方法**: オフライン合成(`node-web-audio-api`)で実際の音源をレンダリングし、FFTで

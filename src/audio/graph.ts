@@ -5,7 +5,7 @@ import type { Instrument } from './instrument';
 import { BasslineVoice } from './bassline';
 import { DrumMachine } from './drums';
 import { FxChain } from './effects';
-import { selectedInitialParams } from './engine-helpers';
+import { initialInstrumentParams } from './engine-helpers';
 import { createWorkletBasslineFilter } from './bassline-worklet';
 import { DRUM_MACHINE_STYLES } from '../domain/constants';
 import type { Song } from '../domain/types';
@@ -17,8 +17,10 @@ export interface AudioGraph {
   filterKind: 'worklet' | 'biquad';
 }
 
-/** Wire master -> effects -> destination and one instrument per bassline/drum track. */
-export async function buildAudioGraph(ctx: BaseAudioContext, song: Song): Promise<AudioGraph> {
+/** Wire master -> effects -> destination and one instrument per bassline/drum track.
+ * `patternId` selects which pattern's sound settings the instruments start with
+ * (default: the first pattern). */
+export async function buildAudioGraph(ctx: BaseAudioContext, song: Song, patternId?: string): Promise<AudioGraph> {
   const master = ctx.createGain();
   master.gain.value = 0.9;
   const fx = new FxChain(ctx);
@@ -26,7 +28,7 @@ export async function buildAudioGraph(ctx: BaseAudioContext, song: Song): Promis
   fx.connect(ctx.destination);
   fx.apply(song.effects);
 
-  const { basslineParams, drumParams } = selectedInitialParams(song);
+  const { basslineParams, drumParams } = initialInstrumentParams(song, patternId);
   // Build all worklet filters up front; only use them if EVERY voice got one, so
   // both basses share the same filter type (consistent pitch/tone).
   const workletFilters = await Promise.all(basslineParams.map(() => createWorkletBasslineFilter(ctx)));

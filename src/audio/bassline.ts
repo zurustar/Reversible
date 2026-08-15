@@ -7,6 +7,14 @@ import { cancelAndHold } from './automation';
 import { clamp01 } from '../util/num';
 
 const ACCENT_GAIN_BOOST = 0.4;
+const WAVEFORMS: readonly Waveform[] = ['saw', 'square'];
+const OSC_TYPE: Record<Waveform, OscillatorType> = { saw: 'sawtooth', square: 'square' };
+
+/** Set an AudioParam now (`when` omitted: live edit) or at `when` (scheduled, e.g. offline render). */
+function setParamValue(param: AudioParam, value: number, when?: number): void {
+  if (when === undefined) param.value = value;
+  else param.setValueAtTime(value, when);
+}
 
 /** Soft-clip (tanh) curve for the overdrive stage, built once. */
 const DRIVE_CURVE = (() => {
@@ -20,7 +28,10 @@ const DRIVE_CURVE = (() => {
 })();
 
 export class BasslineVoice implements Instrument {
-  private osc: OscillatorNode;
+  /** One oscillator per waveform, crossfaded by gain: unlike `osc.type`, a gain
+   * change can be SCHEDULED, so the waveform can follow the pattern being played. */
+  private oscs: Record<Waveform, OscillatorNode>;
+  private oscGains: Record<Waveform, GainNode>;
   private filter: BasslineFilter;
   private driveGain: GainNode;
   private shaper: WaveShaperNode;
@@ -33,10 +44,11 @@ export class BasslineVoice implements Instrument {
 
   /** `filter` is injected (Biquad by default, or an AudioWorklet ladder filter). */
   constructor(ctx: BaseAudioContext, params: BasslineParams, filter?: BasslineFilter) {
-    this.params = { ...params };
+    // Normalize the optional params so setParam() can always update them later.
+    this.params = { ...params, drive: params.drive ?? 0, slideTime: params.slideTime ?? 0.4 };
 
-    this.osc = ctx.createOscillator();
-    this.osc.type = params.waveform === 'square' ? 'square' : 'sawtooth';
+    this.oscs = {} as Record<Waveform, OscillatorNode>;
+    this.oscGains = {} as Record<Waveform, GainNode>;
 
     this.filter = filter ?? new BiquadBasslineFilter(ctx);
     // overdrive stage: filter -> driveGain -> waveshaper -> vca
@@ -48,37 +60,58 @@ export class BasslineVoice implements Instrument {
     this.out = ctx.createGain();
     this.out.gain.value = levelToGain(params.volume);
 
-    this.osc.connect(this.filter.input);
+    for (const w of WAVEFORMS) {
+      const osc = ctx.createOscillator();
+      osc.type = OSC_TYPE[w];
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain).connect(this.filter.input);
+      osc.start();
+      this.oscs[w] = osc;
+      this.oscGains[w] = gain;
+    }
+    this.setWaveform(this.params.waveform);
+
     this.filter.output.connect(this.driveGain);
     this.driveGain.connect(this.shaper);
     this.shaper.connect(this.vca);
     this.vca.connect(this.out);
-    this.setDrive(params.drive ?? 0);
-    this.osc.start();
+    this.setDrive(this.params.drive ?? 0);
   }
 
-  private setDrive(v: number): void {
+  /** Unmute the selected oscillator and mute the others (scheduled when `when` is given). */
+  private setWaveform(waveform: Waveform, when?: number): void {
+    for (const w of WAVEFORMS) setParamValue(this.oscGains[w].gain, w === waveform ? 1 : 0, when);
+  }
+
+  private setDrive(v: number, when?: number): void {
     // 0 = mostly clean (input stays in the linear region), 1 = hard clip
-    this.driveGain.gain.value = 0.5 + clamp01(v) * 6;
+    setParamValue(this.driveGain.gain, 0.5 + clamp01(v) * 6, when);
   }
 
   connect(destination: AudioNode): void {
     this.out.connect(destination);
   }
 
-  setParam(key: string, value: number | string): void {
+  setParam(key: string, value: number | string, when?: number): void {
     if (key === 'waveform') {
-      if (value === 'saw' || value === 'square') {
-        this.params.waveform = value as Waveform;
-        this.osc.type = value === 'square' ? 'square' : 'sawtooth';
+      if ((value === 'saw' || value === 'square') && value !== this.params.waveform) {
+        this.params.waveform = value;
+        this.setWaveform(value, when);
       }
       return;
     }
-    if (typeof value === 'number' && key in this.params) {
-      (this.params as unknown as Record<string, number>)[key] = value;
-      if (key === 'volume') this.out.gain.value = levelToGain(value);
-      if (key === 'drive') this.setDrive(value);
-    }
+    if (typeof value !== 'number' || !(key in this.params)) return;
+    const params = this.params as unknown as Record<string, number>;
+    if (params[key] === value) return; // unchanged: keeps re-applied pattern params free
+    params[key] = value;
+    if (key === 'volume') setParamValue(this.out.gain, levelToGain(value), when);
+    if (key === 'drive') this.setDrive(value, when);
+  }
+
+  /** The frequency of every oscillator (they all track the same note). */
+  private frequencies(): AudioParam[] {
+    return WAVEFORMS.map((w) => this.oscs[w].frequency);
   }
 
   trigger(event: TriggerEvent, when: number, stepDur = 0): void {
@@ -89,16 +122,17 @@ export class BasslineVoice implements Instrument {
     const slide = this.slideInto && this.lastNote !== null && this.lastFreq > 0;
     const willSlide = event.slide === true; // this note ties into the next one
 
-    const f = this.osc.frequency;
-    cancelAndHold(f, when);
-    if (slide) {
-      // glide from the previous pitch and REACH the target exactly within the glide time
-      // (setTargetAtTime only asymptotes and can leave the note off-pitch = out of tune).
-      const glide = 0.01 + (this.params.slideTime ?? 0.4) * 0.14; // 10..150 ms
-      f.setValueAtTime(this.lastFreq, when);
-      f.exponentialRampToValueAtTime(freq, when + glide);
-    } else {
-      f.setValueAtTime(freq, when);
+    const glide = 0.01 + (this.params.slideTime ?? 0.4) * 0.14; // 10..150 ms
+    for (const f of this.frequencies()) {
+      cancelAndHold(f, when);
+      if (slide) {
+        // glide from the previous pitch and REACH the target exactly within the glide time
+        // (setTargetAtTime only asymptotes and can leave the note off-pitch = out of tune).
+        f.setValueAtTime(this.lastFreq, when);
+        f.exponentialRampToValueAtTime(freq, when + glide);
+      } else {
+        f.setValueAtTime(freq, when);
+      }
     }
     this.lastNote = note;
     this.lastFreq = freq;

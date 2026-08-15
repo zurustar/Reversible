@@ -35,6 +35,18 @@
 | `bassline` | BasslineTrack[] | basslineトラックの配列(BASSLINE_COUNT=2)。各要素は下記 |
 | `drums` | DrumTrack[] | ドラムマシンの配列(DRUM_MACHINE_COUNT=2, analog/digital)。各要素は下記 |
 
+#### 設定のスコープ(パターン単位 / 曲全体)
+| スコープ | 設定 |
+|---|---|
+| **パターン単位** | `BasslineParams`(waveform / Tune / Cutoff / Resonance / EnvMod / Decay / Accent / Drive / Slide / Volume)、`DrumVoiceParams`(Level / Tone / Decay / Tune / Snappy)、全ステップ |
+| **曲全体** | `bpm`、`swing`、`name`、`effects`(マスターエフェクト) |
+
+パターン単位の音色設定は**楽器ノード側にも反映される必要がある**(楽器は曲で1組を共有するため)。
+そのため再生時は「いま鳴っているパターン」のパラメータを毎ステップ適用する
+(`applyPatternParams`)。ライブ再生(Scheduler)と WAV 書き出し(offline-render)は同じ
+関数を共有し、同じ音になることを保証する。waveform も切替を**スケジュール可能**にするため、
+BasslineVoice は波形ごとのオシレータをゲインでクロスフェードする実装とする。
+
 ### BasslineTrack
 | フィールド | 型 | 定義域/制約 |
 |---|---|---|

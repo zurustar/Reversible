@@ -14,13 +14,14 @@ export class AudioEngine {
   /** Which Bassline filter implementation is active ('worklet' | 'biquad'). */
   filterKind: 'worklet' | 'biquad' = 'biquad';
 
-  /** Create the AudioContext and instruments. Fail-safe (SEC-15): returns false on failure. */
-  async init(song: Song): Promise<boolean> {
+  /** Create the AudioContext and instruments. Fail-safe (SEC-15): returns false on failure.
+   * `patternId` is the pattern whose sound settings the instruments start with. */
+  async init(song: Song, patternId?: string): Promise<boolean> {
     if (this.initialized) return true;
     try {
       const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new Ctor();
-      const graph = await buildAudioGraph(this.ctx, song);
+      const graph = await buildAudioGraph(this.ctx, song, patternId);
       this.master = graph.master;
       this.fx = graph.fx;
       this.instruments = graph.instruments;

@@ -32,6 +32,37 @@ export function triggerStep(
   }
 }
 
+/** Push one pattern's sound settings (Tune, Cutoff, Level, …) into the instruments, so
+ * that switching pattern also switches sound. Params are stored per pattern, but the
+ * instruments are built once and shared, so the pattern being played has to (re)apply
+ * its own values. `when` schedules them (needed for offline rendering, where the whole
+ * song is scheduled before rendering starts). Unchanged values are no-ops.
+ * Shared by the live Scheduler and the offline WAV renderer. */
+export function applyPatternParams(
+  getInstrument: (id: string) => Instrument | undefined,
+  pattern: Pattern,
+  when?: number,
+): void {
+  for (let t = 0; t < pattern.bassline.length; t++) {
+    const inst = getInstrument(`bassline-${t}`);
+    if (!inst) continue;
+    for (const [key, value] of Object.entries(pattern.bassline[t].params)) {
+      if (value !== undefined) inst.setParam(key, value, when);
+    }
+  }
+  for (let m = 0; m < pattern.drums.length; m++) {
+    const inst = getInstrument(`drums-${m}`);
+    if (!inst?.setVoiceParam) continue;
+    for (const voiceId of DRUM_VOICE_IDS) {
+      const voice = pattern.drums[m].voices[voiceId];
+      if (!voice) continue;
+      for (const [key, value] of Object.entries(voice.params)) {
+        if (typeof value === 'number') inst.setVoiceParam(voiceId, key, value, when);
+      }
+    }
+  }
+}
+
 export const LOOKAHEAD_MS = 25;
 export const SCHEDULE_AHEAD_SEC = 0.1;
 const SWING_MAX_RATIO = 0.5;
@@ -121,7 +152,12 @@ export class Scheduler {
 
   private scheduleStep(index: number, when: number, state: AppState): void {
     const pattern = patternById(state, this.playingPatternId(state));
-    triggerStep((id) => this.engine.getInstrument(id), pattern, index, when, sixteenthSec(state.song.bpm));
+    const getInstrument = (id: string): Instrument | undefined => this.engine.getInstrument(id);
+    // Sound settings belong to the pattern, so re-assert them every step: that covers
+    // song-mode pattern changes, switching the edited pattern, and editing the knobs of
+    // a pattern that is not the one currently sounding.
+    applyPatternParams(getInstrument, pattern, when);
+    triggerStep(getInstrument, pattern, index, when, sixteenthSec(state.song.bpm));
   }
 
   /** Called by a rAF loop: advance the displayed current step to match the audio clock. */

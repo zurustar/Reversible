@@ -8,7 +8,15 @@ export interface Instrument {
    * for this long (tie) before releasing. Instruments that don't tie ignore it.
    */
   trigger(event: TriggerEvent, when: number, stepDur?: number): void;
-  setParam(key: string, value: number | string): void;
+  /**
+   * Set one sound parameter. `when` (AudioContext time) schedules the change for
+   * params that drive an AudioParam directly; omit it to apply immediately (live
+   * knob turns). Scheduling matters for offline rendering, where the whole song
+   * is scheduled up front and `currentTime` never advances.
+   */
+  setParam(key: string, value: number | string, when?: number): void;
+  /** Per-voice params (drum machines). Single-voice instruments omit it. */
+  setVoiceParam?(voiceId: string, key: string, value: number, when?: number): void;
   connect(destination: AudioNode): void;
 }
 
