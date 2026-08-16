@@ -2,7 +2,7 @@
 import { STEP_COUNT, DRUM_VOICE_IDS } from '../domain/constants';
 import type { Store } from '../state/store';
 import type { AppState } from '../state/actions';
-import type { Pattern } from '../domain/types';
+import type { EffectsParams, Pattern } from '../domain/types';
 import { patternById } from '../state/reducer';
 import type { Instrument } from '../audio/instrument';
 
@@ -32,26 +32,29 @@ export function triggerStep(
   }
 }
 
-/** Push one pattern's sound settings (Tune, Cutoff, Level, …) into the instruments, so
- * that switching pattern also switches sound. Params are stored per pattern, but the
- * instruments are built once and shared, so the pattern being played has to (re)apply
- * its own values. `when` schedules them (needed for offline rendering, where the whole
- * song is scheduled before rendering starts). Unchanged values are no-ops.
- * Shared by the live Scheduler and the offline WAV renderer. */
-export function applyPatternParams(
-  getInstrument: (id: string) => Instrument | undefined,
-  pattern: Pattern,
-  when?: number,
-): void {
+/** What `applyPatternParams` needs to reach the audio layer (kept minimal so U1 stays
+ * decoupled from AudioEngine / the offline graph). */
+export interface PatternSoundTarget {
+  getInstrument(id: string): Instrument | undefined;
+  applyEffects?(fx: EffectsParams, when?: number): void;
+}
+
+/** Push one pattern's sound settings (Tune, Cutoff, Level, effects, …) into the audio
+ * layer, so that switching pattern also switches sound. The settings are stored per
+ * pattern, but the instruments and the effects chain are built once and shared, so the
+ * pattern being played has to (re)apply its own values. `when` schedules them (needed
+ * for offline rendering, where the whole song is scheduled before rendering starts).
+ * Unchanged values are no-ops. Shared by the live Scheduler and the offline WAV renderer. */
+export function applyPatternParams(target: PatternSoundTarget, pattern: Pattern, when?: number): void {
   for (let t = 0; t < pattern.bassline.length; t++) {
-    const inst = getInstrument(`bassline-${t}`);
+    const inst = target.getInstrument(`bassline-${t}`);
     if (!inst) continue;
     for (const [key, value] of Object.entries(pattern.bassline[t].params)) {
       if (value !== undefined) inst.setParam(key, value, when);
     }
   }
   for (let m = 0; m < pattern.drums.length; m++) {
-    const inst = getInstrument(`drums-${m}`);
+    const inst = target.getInstrument(`drums-${m}`);
     if (!inst?.setVoiceParam) continue;
     for (const voiceId of DRUM_VOICE_IDS) {
       const voice = pattern.drums[m].voices[voiceId];
@@ -61,6 +64,7 @@ export function applyPatternParams(
       }
     }
   }
+  target.applyEffects?.(pattern.effects, when);
 }
 
 export const LOOKAHEAD_MS = 25;
@@ -68,9 +72,8 @@ export const SCHEDULE_AHEAD_SEC = 0.1;
 const SWING_MAX_RATIO = 0.5;
 
 /** Minimal audio interface the scheduler needs (keeps U1 decoupled from AudioEngine). */
-export interface TriggerTarget {
+export interface TriggerTarget extends PatternSoundTarget {
   readonly currentTime: number;
-  getInstrument(id: string): Instrument | undefined;
   resume(): Promise<void>;
 }
 
@@ -128,10 +131,12 @@ export class Scheduler {
   /** One scheduler tick: schedule everything within the look-ahead window. */
   tick(): void {
     const state = this.store.getState();
-    const bpm = state.song.bpm;
-    const swing = state.song.swing;
     while (this.nextNoteTime < this.engine.currentTime + SCHEDULE_AHEAD_SEC) {
-      this.scheduleStep(this.stepIndex, this.nextNoteTime, state);
+      // Tempo/swing are per pattern too, so resolve them from the pattern of THIS step
+      // (in song mode the chain can change tempo at every bar).
+      const pattern = patternById(state, this.playingPatternId(state));
+      const { bpm, swing } = pattern;
+      this.scheduleStep(pattern, this.stepIndex, this.nextNoteTime);
       this.displayQueue.push({ index: this.stepIndex, time: this.nextNoteTime });
       this.nextNoteTime += sixteenthSec(bpm) + swingOffset(this.stepIndex, bpm, swing);
       this.stepIndex = (this.stepIndex + 1) % STEP_COUNT;
@@ -150,14 +155,12 @@ export class Scheduler {
     return state.selectedPatternId;
   }
 
-  private scheduleStep(index: number, when: number, state: AppState): void {
-    const pattern = patternById(state, this.playingPatternId(state));
-    const getInstrument = (id: string): Instrument | undefined => this.engine.getInstrument(id);
+  private scheduleStep(pattern: Pattern, index: number, when: number): void {
     // Sound settings belong to the pattern, so re-assert them every step: that covers
     // song-mode pattern changes, switching the edited pattern, and editing the knobs of
     // a pattern that is not the one currently sounding.
-    applyPatternParams(getInstrument, pattern, when);
-    triggerStep(getInstrument, pattern, index, when, sixteenthSec(state.song.bpm));
+    applyPatternParams(this.engine, pattern, when);
+    triggerStep((id) => this.engine.getInstrument(id), pattern, index, when, sixteenthSec(pattern.bpm));
   }
 
   /** Called by a rAF loop: advance the displayed current step to match the audio clock. */

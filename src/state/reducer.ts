@@ -33,10 +33,14 @@ function deepClonePattern(p: Pattern): Pattern {
   return JSON.parse(JSON.stringify(p)) as Pattern;
 }
 
-/** Replace the selected pattern with a mutated copy produced by `fn`. */
+/** Replace the selected pattern with a mutated copy produced by `fn`. When `fn` makes
+ * no change (returns the same pattern), the state is returned as-is so the store can
+ * skip the notification (BR-10: invalid input is a no-op). */
 function updateSelectedPattern(state: AppState, fn: (p: Pattern) => Pattern): AppState {
   const target = selectedPattern(state);
-  const patterns = state.song.patterns.map((p) => (p.id === target.id ? fn(p) : p));
+  const updated = fn(target);
+  if (updated === target) return state;
+  const patterns = state.song.patterns.map((p) => (p === target ? updated : p));
   return { ...state, song: { ...state.song, patterns } };
 }
 
@@ -125,21 +129,25 @@ export function reduce(state: AppState, action: Action): AppState {
         return { ...p, drums };
       });
     }
+    // Effects and tempo/swing are per-pattern settings, like the instrument params.
     case 'toggleEffect': {
-      const fx = state.song.effects[action.effect];
-      const updated = { ...fx, on: !fx.on };
-      return { ...state, song: { ...state.song, effects: { ...state.song.effects, [action.effect]: updated } } };
+      return updateSelectedPattern(state, (p) => {
+        const fx = p.effects[action.effect];
+        return { ...p, effects: { ...p.effects, [action.effect]: { ...fx, on: !fx.on } } };
+      });
     }
     case 'setEffectParam': {
-      const fx = state.song.effects[action.effect] as Record<string, number | boolean>;
-      if (!(action.key in fx) || typeof fx[action.key] !== 'number') return state;
-      const updated = { ...fx, [action.key]: clamp01(action.value) };
-      return { ...state, song: { ...state.song, effects: { ...state.song.effects, [action.effect]: updated } } };
+      return updateSelectedPattern(state, (p) => {
+        const fx = p.effects[action.effect] as Record<string, number | boolean>;
+        if (!(action.key in fx) || typeof fx[action.key] !== 'number') return p;
+        const updated = { ...fx, [action.key]: clamp01(action.value) };
+        return { ...p, effects: { ...p.effects, [action.effect]: updated } };
+      });
     }
     case 'setBpm':
-      return { ...state, song: { ...state.song, bpm: clamp(action.bpm, BPM_MIN, BPM_MAX) } };
+      return updateSelectedPattern(state, (p) => ({ ...p, bpm: clamp(action.bpm, BPM_MIN, BPM_MAX) }));
     case 'setSwing':
-      return { ...state, song: { ...state.song, swing: clamp01(action.swing) } };
+      return updateSelectedPattern(state, (p) => ({ ...p, swing: clamp01(action.swing) }));
     case 'setName':
       return { ...state, song: { ...state.song, name: action.name.slice(0, 64) } };
     case 'transport':

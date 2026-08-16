@@ -85,8 +85,11 @@ export function createEmptyPattern(id?: string): Pattern {
   return {
     id: pid,
     length: STEP_COUNT,
+    bpm: BPM_DEFAULT,
+    swing: 0,
     bassline: Array.from({ length: BASSLINE_COUNT }, createBasslineTrack),
     drums: Array.from({ length: DRUM_MACHINE_COUNT }, createDrumTrack),
+    effects: createDefaultEffects(),
   };
 }
 
@@ -95,10 +98,7 @@ export function createEmptySong(name = 'Untitled'): Song {
   return {
     schemaVersion: SCHEMA_VERSION,
     name,
-    bpm: BPM_DEFAULT,
-    swing: 0,
     patterns: [pattern],
     patternOrder: [pattern.id],
-    effects: createDefaultEffects(),
   };
 }

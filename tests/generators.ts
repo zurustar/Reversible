@@ -57,18 +57,18 @@ export const arbitrarySong: fc.Arbitrary<Song> = fc
     return {
       schemaVersion: SCHEMA_VERSION,
       name: r.name,
-      bpm: r.bpm,
-      swing: r.swing,
       patterns: [
         {
           id: 'pattern-1',
           length: STEP_COUNT,
+          bpm: r.bpm,
+          swing: r.swing,
           bassline: [r.basslinea, r.basslineb],
           drums: [makeMachine(), makeMachine()],
+          effects: r.effects,
         },
       ],
       patternOrder: ['pattern-1'],
-      effects: r.effects,
     } satisfies Song;
   });
 

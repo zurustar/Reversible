@@ -1,7 +1,9 @@
-/** Effects section: distortion / delay / PCF / compressor (master bus). */
+/** Effects section: distortion / delay / PCF / compressor (master bus).
+ * Settings belong to the selected pattern, so the chain can change per pattern. */
 import { el, slider, refreshSlider } from './dom';
 import type { UiContext, ViewHandle } from './context';
 import type { EffectName } from '../state/actions';
+import { selectedPattern } from '../state/reducer';
 
 interface FxDef {
   name: EffectName;
@@ -56,12 +58,16 @@ export function createEffectsSection(ctx: UiContext): ViewHandle {
     return el('div', { class: 'fx-block' }, [toggle, controls]);
   });
 
-  const root = el('div', { class: 'panel' }, [el('h2', { text: 'Effects' }), ...blocks]);
+  const root = el('div', { class: 'panel' }, [
+    el('h2', { text: 'Effects' }),
+    el('p', { class: 'tagline', text: 'パターンごとの設定(選択中のパターンに適用されます)' }),
+    ...blocks,
+  ]);
 
   return {
     el: root,
     update(state) {
-      const effects = state.song.effects;
+      const effects = selectedPattern(state).effects;
       for (const fx of FX) {
         const group = effects[fx.name] as unknown as Record<string, number | boolean>;
         toggles.get(fx.name)!.classList.toggle('on', group.on === true);

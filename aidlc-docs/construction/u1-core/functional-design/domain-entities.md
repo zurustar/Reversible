@@ -20,11 +20,9 @@
 ### Song(集約ルート)
 | フィールド | 型 | 定義域/制約 |
 |---|---|---|
-| `schemaVersion` | number | `=== SCHEMA_VERSION` |
+| `schemaVersion` | number | `=== SCHEMA_VERSION`(=2)。v1 は読み込み時に移行(下記) |
 | `name` | string | 1..64 文字(UI編集可) |
-| `bpm` | number | `[BPM_MIN, BPM_MAX]`、整数でなくても可(小数許容)。範囲外はクランプ |
-| `swing` | number | `[0, 1]`。Transport のスライダーで可変(US-06 実装済み)。奇数16分音符を最大50%遅延 |
-| `patterns` | Pattern[] | 1個以上(MVPは1個) |
+| `patterns` | Pattern[] | 1個以上 |
 | `patternOrder` | string[] | ソングチェーン(パターンidの並び、繰り返し可)。ソングモードで順に再生(US-07 実装済み)。AppState に `songMode`/`songPos` を追加 |
 
 ### Pattern
@@ -32,20 +30,39 @@
 |---|---|---|
 | `id` | string | 一意(非空) |
 | `length` | number | `=== STEP_COUNT`(MVP=16) |
+| `bpm` | number | `[BPM_MIN, BPM_MAX]`、小数許容。範囲外はクランプ。**パターンごと**(ソングチェーンではパターン境界でテンポが変わる) |
+| `swing` | number | `[0, 1]`。奇数16分音符を最大50%遅延。**パターンごと** |
 | `bassline` | BasslineTrack[] | basslineトラックの配列(BASSLINE_COUNT=2)。各要素は下記 |
 | `drums` | DrumTrack[] | ドラムマシンの配列(DRUM_MACHINE_COUNT=2, analog/digital)。各要素は下記 |
+| `effects` | EffectsParams | マスターエフェクト設定。**パターンごと** |
 
 #### 設定のスコープ(パターン単位 / 曲全体)
 | スコープ | 設定 |
 |---|---|
-| **パターン単位** | `BasslineParams`(waveform / Tune / Cutoff / Resonance / EnvMod / Decay / Accent / Drive / Slide / Volume)、`DrumVoiceParams`(Level / Tone / Decay / Tune / Snappy)、全ステップ |
-| **曲全体** | `bpm`、`swing`、`name`、`effects`(マスターエフェクト) |
+| **パターン単位** | `bpm`、`swing`、`effects`(Distortion / Delay / PCF / Compressor)、`BasslineParams`(waveform / Tune / Cutoff / Resonance / EnvMod / Decay / Accent / Drive / Slide / Volume)、`DrumVoiceParams`(Level / Tone / Decay / Tune / Snappy)、全ステップ |
+| **曲全体** | `name`、`patternOrder`(ソングチェーン) |
 
-パターン単位の音色設定は**楽器ノード側にも反映される必要がある**(楽器は曲で1組を共有するため)。
-そのため再生時は「いま鳴っているパターン」のパラメータを毎ステップ適用する
-(`applyPatternParams`)。ライブ再生(Scheduler)と WAV 書き出し(offline-render)は同じ
-関数を共有し、同じ音になることを保証する。waveform も切替を**スケジュール可能**にするため、
-BasslineVoice は波形ごとのオシレータをゲインでクロスフェードする実装とする。
+#### スキーマ移行(v1 → v2)
+v1 は `bpm` / `swing` / `effects` を Song 直下に持っていた。v2 ではこれらが Pattern に移動。
+`validator.ts` が読み込み時に移行する: ルートの値を**全パターンへコピー**し(パターン側が
+自前の値を持つ場合はそちらを優先)、ルートのフィールドは削除して `schemaVersion` を 2 にする。
+`effects` はパターンごとに別オブジェクトとして生成する(1つを共有しない)。
+これにより既存の保存データ(localStorage / エクスポート済み JSON)はそのまま読める。
+
+#### 実装上の要点(パターン単位の設定を音に反映する)
+楽器ノードとエフェクトチェーンは曲で**1組を共有**するため、パターン単位の設定は
+「いま鳴っているパターン」の値を音声側へ適用しないと効かない。
+
+- `applyPatternParams(target, pattern, when)` — bassline / ドラム / effects をまとめて適用。
+  ライブ再生(Scheduler)と WAV 書き出し(offline-render)が同じ関数を共有し、同じ音になることを保証する。
+  Scheduler は毎ステップ適用(値が変わらなければ no-op)。
+- `when` 指定でスケジュールする。オフラインレンダリングは `currentTime` が進まないため、
+  即時の `.value` 書き込みは曲全体に効いてしまう。
+- **スケジュールできない API を避ける**:
+  - `osc.type` は即時変更のみ → BasslineVoice は波形ごとのオシレータをゲインでクロスフェード。
+  - `WaveShaper.curve` は即時変更のみ → Distortion は Amount ごとに shaper を持ち、ゲインで切り替える。
+- `bpm` / `swing` は Scheduler がステップごとに、そのステップのパターンから読む
+  (ソングチェーンではパターン境界でテンポが変わる)。offline-render も同様にステップ時刻を積算する。
 
 ### BasslineTrack
 | フィールド | 型 | 定義域/制約 |
@@ -114,6 +131,6 @@ Pattern 1 ── 1 DrumTrack ── (5 voices) ── 各 16 DrumStep
 ```
 
 ## ファクトリ(純粋)
-- `createEmptySong(name?)`: bpm=120, swing=0, パターン1個(全ステップ off、basslineデフォルトパラメータ、5音色分の空トラック)。
-- `createEmptyPattern(id)`: 16ステップの空トラック群を生成。
+- `createEmptySong(name?)`: パターン1個だけを持つ曲(name / patternOrder のみが曲スコープ)。
+- `createEmptyPattern(id)`: 16ステップの空トラック群 + bpm=120 / swing=0 / デフォルトエフェクト。
 - デフォルト `BasslineParams` / `DrumVoiceParams`: 中庸値(cutoff=0.5 等)。

@@ -17,8 +17,9 @@
 | `setBasslineStep{index,step}` | 該当 BasslineStep を部分更新 | index∈[0,15], note∈[0,24](クランプ) |
 | `setBasslineParam{key,value}` | params[key] 更新 | 数値は[0,1]クランプ / waveformは列挙 |
 | `setDrumParam{voiceId,key,value}` | voice.params[key] 更新 | [0,1]クランプ |
-| `setBpm{bpm}` | song.bpm 更新 | [20,300]クランプ |
-| `setSwing{swing}` | song.swing 更新 | [0,1]クランプ |
+| `setBpm{bpm}` | 選択中パターンの bpm 更新(パターン単位) | [20,300]クランプ |
+| `setSwing{swing}` | 選択中パターンの swing 更新(パターン単位) | [0,1]クランプ |
+| `toggleEffect{effect}` / `setEffectParam{effect,key,value}` | 選択中パターンの effects 更新(パターン単位) | [0,1]クランプ / 未知キーは no-op |
 | `transport{playing}` | playing 更新 | — |
 | `setCurrentStep{index}` | currentStep 更新(表示用) | [0,15] |
 | `loadSong{song}` | song 差し替え、currentStep=0 | 事前に検証済み(U3 Validator) |
@@ -52,11 +53,13 @@ start():
 
 scheduler():                       // 25msごと
   snapshot = store.getState()
-  bpm = snapshot.song.bpm
   while nextNoteTime < audioContext.currentTime + SCHEDULE_AHEAD_SEC:
-      scheduleStep(currentStepIndex, nextNoteTime, snapshot)
+      pattern = playingPattern(snapshot)      // ソングモードではチェーン位置のパターン
+      bpm, swing = pattern.bpm, pattern.swing // テンポ/スウィングもパターン単位
+      applyPatternParams(engine, pattern, nextNoteTime)   // 音色・エフェクトを追従させる
+      scheduleStep(pattern, currentStepIndex, nextNoteTime)
       enqueueForDisplay(currentStepIndex, nextNoteTime)   // UI表示用キュー
-      nextNoteTime += stepDuration(bpm) + swingOffset(...)
+      nextNoteTime += stepDuration(bpm) + swingOffset(index, bpm, swing)
       currentStepIndex = (currentStepIndex + 1) mod STEP_COUNT
 
 stop():
@@ -80,7 +83,7 @@ for voiceId in DRUM_VOICE_IDS:
             { voiceId, accent: ds.accent ?? false }, when)
 ```
 - **重要**: 発音は必ず `when`(AudioContext時刻)で**先行予約**。UIスレッドのタイマーで直接発音しない(NFR-1、JS-2)。
-- **テンポ変更中**: 各ループで `bpm` を再読込するため、再生を止めずに追従(US-02 GWT-2)。
+- **テンポ変更中**: 各ステップで再生中パターンの `bpm` を再読込するため、再生を止めずに追従(US-02 GWT-2)。
 
 ### 表示同期(currentStep)
 - `enqueueForDisplay` で `{index, time}` を貯め、`requestAnimationFrame` ループが `audioContext.currentTime` を見て、到達済みの最新 index を `store.dispatch(setCurrentStep)` する。これにより音とUIが分離しつつ視覚的に同期(NFR-1)。

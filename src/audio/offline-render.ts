@@ -3,8 +3,9 @@
  * (buildAudioGraph) and the same per-step triggering (triggerStep), so the file
  * matches what you hear. */
 import type { AppState } from '../state/actions';
-import type { Instrument } from './instrument';
+import type { Pattern } from '../domain/types';
 import { buildAudioGraph } from './graph';
+import type { PatternSoundTarget } from '../sequencer/scheduler';
 import { applyPatternParams, sixteenthSec, swingOffset, triggerStep } from '../sequencer/scheduler';
 import { patternById } from '../state/reducer';
 import { STEP_COUNT } from '../domain/constants';
@@ -28,15 +29,17 @@ export function playbackSequence(state: AppState): string[] {
 export async function renderSongToBuffer(state: AppState, opts: RenderOptions = {}): Promise<AudioBuffer> {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const tailSec = opts.tailSec ?? DEFAULT_TAIL_SEC;
-  const { bpm, swing } = state.song;
   const seq = playbackSequence(state);
 
   // Lay out every step's absolute time first so we can size the offline context.
-  const events: Array<{ patternId: string; index: number; when: number }> = [];
+  // Tempo/swing are per pattern, so each pattern in the chain sets its own step length.
+  const events: Array<{ pattern: Pattern; index: number; when: number; stepDur: number }> = [];
   let t = PREROLL_SEC;
   for (const patternId of seq) {
+    const pattern = patternById(state, patternId);
+    const { bpm, swing } = pattern;
     for (let index = 0; index < STEP_COUNT; index++) {
-      events.push({ patternId, index, when: t });
+      events.push({ pattern, index, when: t, stepDur: sixteenthSec(bpm) });
       t += sixteenthSec(bpm) + swingOffset(index, bpm, swing);
     }
   }
@@ -48,14 +51,16 @@ export async function renderSongToBuffer(state: AppState, opts: RenderOptions = 
   const ctx = new OfflineCtor(1, frames, sampleRate);
 
   const graph = await buildAudioGraph(ctx, state.song, seq[0]);
-  const stepDur = sixteenthSec(bpm);
-  const getInstrument = (id: string): Instrument | undefined => graph.instruments.get(id);
+  // Same target shape the live engine offers, so both paths apply settings identically.
+  const target: PatternSoundTarget = {
+    getInstrument: (id) => graph.instruments.get(id),
+    applyEffects: (fx, when) => graph.fx.apply(fx, when),
+  };
   for (const ev of events) {
-    const pattern = patternById(state, ev.patternId);
-    // Sound settings (Tune など) are stored per pattern: apply the ones of the pattern
-    // this step belongs to, scheduled at the step's time, exactly as live playback does.
-    applyPatternParams(getInstrument, pattern, ev.when);
-    triggerStep(getInstrument, pattern, ev.index, ev.when, stepDur);
+    // Sound settings (Tune / effects など) are stored per pattern: apply the ones of the
+    // pattern this step belongs to, scheduled at the step's time, as live playback does.
+    applyPatternParams(target, ev.pattern, ev.when);
+    triggerStep(target.getInstrument, ev.pattern, ev.index, ev.when, ev.stepDur);
   }
   return ctx.startRendering();
 }

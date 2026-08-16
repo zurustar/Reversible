@@ -39,5 +39,6 @@ MVP(bassline×1 + ドラム×1 + 16ステップ + JSON入出力 + 単一ファ�
 
 ## 進捗ログ
 - 2026-07-06: MVP完了・main へマージ(`c57ead6`)。本ロードマップ作成。
+- 2026-08-16: `bpm` / `swing` / `effects` もパターン単位へ移動(schemaVersion 1→2、v1 は読み込み時に自動移行)。ソングチェーンでパターンごとにテンポ・エフェクトを変えられる。`FxChain.apply(fx, when)` を時刻指定対応(Distortion は Amount ごとの shaper 切替)。テスト55件。
 - 2026-08-15: GitHub issue #1(WAV書き出しに Tune が反映されない)/ #2(Tune などの設定をパターン単位に)を修正。原因は共通で、楽器の初期パラメータが `patterns[0]` 固定だったこと。再生中パターンの音色設定を毎ステップ適用する `applyPatternParams` をライブ再生と WAV 書き出しで共有。詳細は [known-issues.md](known-issues.md)。テスト46件、`npm run probe` 実測値は変化なし。
 - 2026-07-07: R1〜R7 を自走実装(feature/enhancements)。R1 スウィング / R2 AudioWorklet basslineフィルタ / R3 エフェクト / R4 bassline×2 / R5 ドラムanalog+digital / R6 ソングモード / R7 リッチUI(初版)。各コミットでビルド+テスト(30件)+docs同期。**音と見た目の最終調整はユーザー確認待ち**。

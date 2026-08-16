@@ -33,11 +33,11 @@ describe('reducer invariants (PBT-03)', () => {
     fc.assert(
       fc.property(fc.array(arbitraryAction, { maxLength: 40 }), (actions) => {
         const s = applyAll(actions);
-        expect(s.song.bpm).toBeGreaterThanOrEqual(BPM_MIN);
-        expect(s.song.bpm).toBeLessThanOrEqual(BPM_MAX);
-        expect(s.song.swing).toBeGreaterThanOrEqual(0);
-        expect(s.song.swing).toBeLessThanOrEqual(1);
         const p = s.song.patterns[0];
+        expect(p.bpm).toBeGreaterThanOrEqual(BPM_MIN);
+        expect(p.bpm).toBeLessThanOrEqual(BPM_MAX);
+        expect(p.swing).toBeGreaterThanOrEqual(0);
+        expect(p.swing).toBeLessThanOrEqual(1);
         for (const track of p.bassline) {
           for (const st of track.steps) {
             expect(Number.isInteger(st.note)).toBe(true);

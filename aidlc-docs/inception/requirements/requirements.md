@@ -62,7 +62,7 @@
 - **FR-6.3** グラフィック/アイコン等の素材はすべてオリジナル。既存製品のスキンや画像は使用しない。
 
 ### FR-7: エフェクト(将来拡張)
-- **FR-7.1** [実装済み] master バスに **Distortion / Delay / PCF(パターン/LFO変調フィルタ)/ Compressor** のエフェクトチェーンを実装(各 on/off + パラメータ、`effects.ts` の `FxChain`)。設定は Song モデル(`effects`)に保存・JSON入出力対応。
+- **FR-7.1** [実装済み] master バスに **Distortion / Delay / PCF(パターン/LFO変調フィルタ)/ Compressor** のエフェクトチェーンを実装(各 on/off + パラメータ、`effects.ts` の `FxChain`)。設定は**パターン単位**(`Pattern.effects`)で保存・JSON入出力対応(schemaVersion 2 で Song 直下から移動)。
 
 ---
 

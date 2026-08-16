@@ -8,6 +8,7 @@ import { SoundDesignService } from './services/sound-design';
 import { PatternEditService } from './services/pattern-edit';
 import { ProjectService } from './services/project';
 import { mountApp } from './ui/app';
+import { selectedPattern } from './state/reducer';
 import type { UiContext } from './ui/context';
 
 async function main(): Promise<void> {
@@ -46,13 +47,14 @@ async function main(): Promise<void> {
   const sampleRate = engine.context?.sampleRate ?? 0;
   mountApp(root, ctx, { buildTime, filterKind: engine.filterKind, sampleRate });
 
-  // Keep the audio effects chain in sync with the song's effects settings.
-  let lastEffects = store.getState().song.effects;
+  // Effects are a per-pattern setting: reflect the SELECTED pattern's chain so edits
+  // are audible immediately (also covers loading a song / switching pattern). While a
+  // different pattern is sounding, the Scheduler is the authority — see
+  // SoundDesignService for the same rule applied to the instrument params.
   store.subscribe((state) => {
-    if (state.song.effects !== lastEffects) {
-      lastEffects = state.song.effects;
-      engine.applyEffects(state.song.effects);
-    }
+    const pattern = selectedPattern(state);
+    if (state.playing && state.songMode && (state.song.patternOrder[state.songPos] ?? pattern.id) !== pattern.id) return;
+    engine.applyEffects(pattern.effects);
   });
 
   // Auto-save when the song changes (ignore transient playhead updates).
