@@ -3,8 +3,9 @@
  * (buildAudioGraph) and the same per-step triggering (triggerStep), so the file
  * matches what you hear. */
 import type { AppState } from '../state/actions';
+import type { Instrument } from './instrument';
 import { buildAudioGraph } from './graph';
-import { sixteenthSec, swingOffset, triggerStep } from '../sequencer/scheduler';
+import { applyPatternParams, sixteenthSec, swingOffset, triggerStep } from '../sequencer/scheduler';
 import { patternById } from '../state/reducer';
 import { STEP_COUNT } from '../domain/constants';
 
@@ -46,11 +47,15 @@ export async function renderSongToBuffer(state: AppState, opts: RenderOptions = 
     (window as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext }).webkitOfflineAudioContext;
   const ctx = new OfflineCtor(1, frames, sampleRate);
 
-  const graph = await buildAudioGraph(ctx, state.song);
+  const graph = await buildAudioGraph(ctx, state.song, seq[0]);
   const stepDur = sixteenthSec(bpm);
+  const getInstrument = (id: string): Instrument | undefined => graph.instruments.get(id);
   for (const ev of events) {
     const pattern = patternById(state, ev.patternId);
-    triggerStep((id) => graph.instruments.get(id), pattern, ev.index, ev.when, stepDur);
+    // Sound settings (Tune など) are stored per pattern: apply the ones of the pattern
+    // this step belongs to, scheduled at the step's time, exactly as live playback does.
+    applyPatternParams(getInstrument, pattern, ev.when);
+    triggerStep(getInstrument, pattern, ev.index, ev.when, stepDur);
   }
   return ctx.startRendering();
 }

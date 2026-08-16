@@ -27,9 +27,10 @@ async function main(): Promise<void> {
   // Restore previous session if present.
   project.restoreFromBrowser();
 
-  // Audio engine (created from current song's initial params).
+  // Audio engine (created from the selected pattern's sound params; playback keeps
+  // them in sync with whichever pattern is playing).
   const engine = new AudioEngine();
-  const audioOk = await engine.init(store.getState().song);
+  const audioOk = await engine.init(store.getState().song, store.getState().selectedPatternId);
   if (!audioOk) {
     root.textContent = 'このブラウザでは Web Audio を初期化できませんでした。';
     return;

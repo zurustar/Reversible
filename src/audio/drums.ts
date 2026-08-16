@@ -46,6 +46,8 @@ export class DrumMachine implements Instrument {
     /* drum machine params are per-voice; see setVoiceParam */
   }
 
+  /** No `when` handling needed: every voice reads its params when it is triggered,
+   * so a change made before a trigger already applies only to that trigger onward. */
   setVoiceParam(voiceId: DrumVoiceId, key: keyof DrumVoiceParams, value: number): void {
     const p = this.params[voiceId];
     if (p) p[key] = clamp01(value);
