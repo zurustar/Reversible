@@ -9,6 +9,7 @@ import { createIoView } from './io-view';
 import { BASSLINE_COUNT, DRUM_MACHINE_COUNT } from '../domain/constants';
 
 export interface AppMeta {
+  version: string;
   buildTime: string;
   filterKind: string;
   sampleRate: number;
@@ -20,7 +21,7 @@ export function mountApp(root: HTMLElement, ctx: UiContext, meta: AppMeta): void
     el('p', { class: 'tagline', text: 'acid groovebox — bassline synths + drum machines' }),
     el('p', {
       class: 'build-stamp',
-      text: `build ${meta.buildTime} · Bassline filter: ${meta.filterKind} · ${meta.sampleRate}Hz`,
+      text: `v${meta.version} · build ${meta.buildTime} · Bassline filter: ${meta.filterKind} · ${meta.sampleRate}Hz`,
     }),
   ]);
 

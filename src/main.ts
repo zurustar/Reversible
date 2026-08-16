@@ -44,8 +44,9 @@ async function main(): Promise<void> {
 
   const ctx: UiContext = { store, transport, sound, edit, project };
   const buildTime = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev';
+  const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
   const sampleRate = engine.context?.sampleRate ?? 0;
-  mountApp(root, ctx, { buildTime, filterKind: engine.filterKind, sampleRate });
+  mountApp(root, ctx, { version, buildTime, filterKind: engine.filterKind, sampleRate });
 
   // Effects are a per-pattern setting: reflect the SELECTED pattern's chain so edits
   // are audible immediately (also covers loading a song / switching pattern). While a
