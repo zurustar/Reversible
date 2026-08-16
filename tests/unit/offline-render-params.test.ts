@@ -64,12 +64,27 @@ describe('renderSongToBuffer — per-pattern sound settings', () => {
     expect(hz).toBeCloseTo(noteToFreq(NOTE, 1200), -1);
   });
 
+  it('gives each pattern in the chain its own tempo', async () => {
+    // 60 BPM: a 16-step bar is 4s. 240 BPM: 1s. Chained, the render must be 5s long —
+    // taking one song-wide tempo would make it 2s or 8s.
+    const slow = tunedPattern('pattern-1', 0.5);
+    slow.bpm = 60;
+    const fast = tunedPattern('pattern-2', 0.5);
+    fast.bpm = 240;
+    const tailSec = 0.2;
+    const buf = await renderSongToBuffer(stateFor(songWith([slow, fast]), 'pattern-1', true), {
+      sampleRate: SR,
+      tailSec,
+    });
+    expect(buf.length / SR).toBeCloseTo(4 + 1 + tailSec + 0.05, 2); // + tail + preroll
+  });
+
   it('switches Tune per pattern across a song chain', async () => {
     const song = songWith([tunedPattern('pattern-1', 0.5), tunedPattern('pattern-2', 1)]);
     const state = stateFor(song, 'pattern-1', true); // song mode: pattern-1 then pattern-2
     const buf = await renderSongToBuffer(state, { sampleRate: SR, tailSec: 0.2 });
     const data = buf.getChannelData(0) as unknown as Float32Array;
-    const barSec = (60 / song.bpm / 4) * 16;
+    const barSec = (60 / song.patterns[0].bpm / 4) * 16;
     expect(pitchHz(data, 0.07)).toBeCloseTo(noteToFreq(NOTE, 0), -1);
     expect(pitchHz(data, 0.07 + barSec)).toBeCloseTo(noteToFreq(NOTE, 1200), -1);
   });

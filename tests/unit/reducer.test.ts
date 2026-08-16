@@ -4,6 +4,7 @@ import { createEmptySong } from '../../src/domain/factories';
 import { reduce } from '../../src/state/reducer';
 import type { AppState } from '../../src/state/actions';
 import { BPM_MAX, BPM_MIN, NOTE_MAX } from '../../src/domain/constants';
+import { selectedPattern } from '../../src/state/reducer';
 
 function init(): AppState {
   const song = createEmptySong();
@@ -13,12 +14,12 @@ function init(): AppState {
 describe('reducer', () => {
   it('clamps bpm above max (BR-01)', () => {
     const s = reduce(init(), { type: 'setBpm', bpm: 5000 });
-    expect(s.song.bpm).toBe(BPM_MAX);
+    expect(selectedPattern(s).bpm).toBe(BPM_MAX);
   });
 
   it('clamps bpm below min and handles NaN (BR-01)', () => {
-    expect(reduce(init(), { type: 'setBpm', bpm: -10 }).song.bpm).toBe(BPM_MIN);
-    expect(reduce(init(), { type: 'setBpm', bpm: NaN }).song.bpm).toBe(BPM_MIN);
+    expect(selectedPattern(reduce(init(), { type: 'setBpm', bpm: -10 })).bpm).toBe(BPM_MIN);
+    expect(selectedPattern(reduce(init(), { type: 'setBpm', bpm: NaN })).bpm).toBe(BPM_MIN);
   });
 
   it('clamps Bassline note into range (BR-04)', () => {
@@ -44,11 +45,11 @@ describe('reducer', () => {
 
   it('toggles an effect on/off', () => {
     let s = init();
-    expect(s.song.effects.delay.on).toBe(false);
+    expect(selectedPattern(s).effects.delay.on).toBe(false);
     s = reduce(s, { type: 'toggleEffect', effect: 'delay' });
-    expect(s.song.effects.delay.on).toBe(true);
+    expect(selectedPattern(s).effects.delay.on).toBe(true);
     s = reduce(s, { type: 'toggleEffect', effect: 'delay' });
-    expect(s.song.effects.delay.on).toBe(false);
+    expect(selectedPattern(s).effects.delay.on).toBe(false);
   });
 
   it('cycles a drum step off -> on -> accent -> off', () => {
@@ -65,9 +66,9 @@ describe('reducer', () => {
 
   it('clamps effect params to [0,1]', () => {
     let s = reduce(init(), { type: 'setEffectParam', effect: 'delay', key: 'feedback', value: 9 });
-    expect(s.song.effects.delay.feedback).toBe(1);
+    expect(selectedPattern(s).effects.delay.feedback).toBe(1);
     s = reduce(s, { type: 'setEffectParam', effect: 'delay', key: 'feedback', value: -9 });
-    expect(s.song.effects.delay.feedback).toBe(0);
+    expect(selectedPattern(s).effects.delay.feedback).toBe(0);
   });
 
   it('ignores unknown effect param key (no throw)', () => {

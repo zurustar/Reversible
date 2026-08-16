@@ -3,18 +3,12 @@ import type { BasslineParams, Waveform, TriggerEvent } from '../domain/types';
 import type { Instrument, BasslineFilter } from './instrument';
 import { BiquadBasslineFilter } from './bassline-filter';
 import { noteToFreq, tuneToCents, decayToSeconds, levelToGain, accentAmount } from './param-maps';
-import { cancelAndHold } from './automation';
+import { cancelAndHold, setParamValue } from './automation';
 import { clamp01 } from '../util/num';
 
 const ACCENT_GAIN_BOOST = 0.4;
 const WAVEFORMS: readonly Waveform[] = ['saw', 'square'];
 const OSC_TYPE: Record<Waveform, OscillatorType> = { saw: 'sawtooth', square: 'square' };
-
-/** Set an AudioParam now (`when` omitted: live edit) or at `when` (scheduled, e.g. offline render). */
-function setParamValue(param: AudioParam, value: number, when?: number): void {
-  if (when === undefined) param.value = value;
-  else param.setValueAtTime(value, when);
-}
 
 /** Soft-clip (tanh) curve for the overdrive stage, built once. */
 const DRIVE_CURVE = (() => {

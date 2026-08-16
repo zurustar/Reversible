@@ -66,7 +66,8 @@ export class AudioEngine {
     this.instruments.set(id, inst);
   }
 
-  applyEffects(fx: EffectsParams): void {
-    this.fx?.apply(fx);
+  /** Apply a pattern's effects settings; `when` schedules them (see FxChain.apply). */
+  applyEffects(fx: EffectsParams, when?: number): void {
+    this.fx?.apply(fx, when);
   }
 }

@@ -50,11 +50,17 @@ export interface DrumTrack {
   voices: Record<DrumVoiceId, DrumVoicePattern>;
 }
 
+/** Everything a pattern sounds like is stored in the pattern: steps, instrument
+ * params, tempo/swing and the master effects. Only `name` and the pattern chain
+ * are song-wide. */
 export interface Pattern {
   id: string;
   length: number; // === STEP_COUNT
+  bpm: number; // [BPM_MIN, BPM_MAX]
+  swing: number; // 0..1
   bassline: BasslineTrack[]; // BASSLINE_COUNT tracks
   drums: DrumTrack[]; // DRUM_MACHINE_COUNT machines (analog, digital)
+  effects: EffectsParams;
 }
 
 export interface EffectsParams {
@@ -67,11 +73,8 @@ export interface EffectsParams {
 export interface Song {
   schemaVersion: number;
   name: string;
-  bpm: number;
-  swing: number; // 0..1
   patterns: Pattern[];
   patternOrder: string[];
-  effects: EffectsParams;
 }
 
 /** Trigger event passed from sequencer to instruments (audio layer). */

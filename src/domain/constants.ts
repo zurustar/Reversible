@@ -1,6 +1,9 @@
 /** Domain constants (U1 Core). See aidlc-docs/construction/u1-core/functional-design/domain-entities.md */
 
-export const SCHEMA_VERSION = 1;
+/** v1: bpm / swing / effects were song-wide. v2: they moved into Pattern
+ * (per-pattern settings). v1 files are migrated on import — see validator.ts. */
+export const SCHEMA_VERSION = 2;
+export const MIGRATABLE_SCHEMA_VERSIONS = [1];
 export const STEP_COUNT = 16;
 
 export const BPM_MIN = 20;

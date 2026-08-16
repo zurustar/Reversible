@@ -19,9 +19,8 @@ export function patternInstrumentParams(pattern: Pattern): InstrumentParams {
   return { basslineParams, drumParams };
 }
 
-/** Params to build the graph with: those of the pattern that plays first
- * (playback then keeps them in sync per pattern — see `applyPatternParams`). */
-export function initialInstrumentParams(song: Song, patternId?: string): InstrumentParams {
-  const pattern = song.patterns.find((p) => p.id === patternId) ?? song.patterns[0];
-  return patternInstrumentParams(pattern);
+/** The pattern to build the graph from: the one that plays first (playback then keeps
+ * the settings in sync per pattern — see `applyPatternParams`). */
+export function initialPattern(song: Song, patternId?: string): Pattern {
+  return song.patterns.find((p) => p.id === patternId) ?? song.patterns[0];
 }

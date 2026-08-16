@@ -1,15 +1,17 @@
 /** SongValidator (U3, C-09). Safe parse + schema/type validation of untrusted JSON (SEC-05/13/15). */
 import {
   SCHEMA_VERSION,
+  MIGRATABLE_SCHEMA_VERSIONS,
   STEP_COUNT,
   BPM_MIN,
   BPM_MAX,
+  BPM_DEFAULT,
   NOTE_MIN,
   NOTE_MAX,
   DRUM_VOICE_IDS,
 } from '../domain/constants';
 import { BASSLINE_COUNT, DRUM_MACHINE_COUNT } from '../domain/constants';
-import type { Song, EffectsParams, BasslineTrack, DrumTrack } from '../domain/types';
+import type { Song, EffectsParams, BasslineTrack, DrumTrack, Pattern } from '../domain/types';
 import { createDefaultEffects, createBasslineTrack, createDrumTrack } from '../domain/factories';
 import { type Result, type ValidationError, ok, err } from '../util/result';
 
@@ -70,11 +72,17 @@ function validateDrums(drums: unknown, path: string): Result<true, ValidationErr
 
 function validateSong(data: unknown): Result<Song, ValidationError> {
   if (!isObject(data)) return fail('E_TYPE', 'root must be an object');
-  if (data.schemaVersion !== SCHEMA_VERSION)
+  if (data.schemaVersion !== SCHEMA_VERSION && !MIGRATABLE_SCHEMA_VERSIONS.includes(data.schemaVersion as number))
     return fail('E_VERSION', `unsupported schemaVersion (expected ${SCHEMA_VERSION})`, 'schemaVersion');
   if (typeof data.name !== 'string') return fail('E_TYPE', 'name must be a string', 'name');
-  if (!isNumberInRange(data.bpm, BPM_MIN, BPM_MAX)) return fail('E_RANGE', 'bpm out of range', 'bpm');
-  if (!isNumberInRange(data.swing, 0, 1)) return fail('E_RANGE', 'swing out of range', 'swing');
+  // v1 kept bpm/swing/effects at the root; v2 keeps them per pattern. Either way the
+  // root values are the fallback for patterns that don't carry their own yet.
+  const rootBpm = data.bpm === undefined ? BPM_DEFAULT : data.bpm;
+  const rootSwing = data.swing === undefined ? 0 : data.swing;
+  if (!isNumberInRange(rootBpm, BPM_MIN, BPM_MAX)) return fail('E_RANGE', 'bpm out of range', 'bpm');
+  if (!isNumberInRange(rootSwing, 0, 1)) return fail('E_RANGE', 'swing out of range', 'swing');
+  const rootEffects = validateEffects(data.effects);
+  if (!rootEffects.ok) return rootEffects;
   if (!Array.isArray(data.patterns) || data.patterns.length < 1)
     return fail('E_PATTERNS', 'at least one pattern required', 'patterns');
   for (let i = 0; i < data.patterns.length; i++) {
@@ -83,6 +91,12 @@ function validateSong(data: unknown): Result<Song, ValidationError> {
     if (typeof pat.id !== 'string' || pat.id.length === 0)
       return fail('E_TYPE', 'pattern.id required', `patterns[${i}]`);
     if (pat.length !== STEP_COUNT) return fail('E_STEPS', `pattern.length must be ${STEP_COUNT}`, `patterns[${i}]`);
+    if (pat.bpm !== undefined && !isNumberInRange(pat.bpm, BPM_MIN, BPM_MAX))
+      return fail('E_RANGE', 'pattern.bpm out of range', `patterns[${i}].bpm`);
+    if (pat.swing !== undefined && !isNumberInRange(pat.swing, 0, 1))
+      return fail('E_RANGE', 'pattern.swing out of range', `patterns[${i}].swing`);
+    const patEffects = validateEffects(pat.effects);
+    if (!patEffects.ok) return patEffects;
     // bassline: array of tracks. Back-compat: old single-object, and the legacy
     // field name (`bass303`) from files saved before the rename.
     const rawBl = pat.bassline ?? (pat as Record<string, unknown>).bass303;
@@ -102,21 +116,33 @@ function validateSong(data: unknown): Result<Song, ValidationError> {
   if (!Array.isArray(data.patternOrder) || data.patternOrder.some((x) => typeof x !== 'string'))
     return fail('E_TYPE', 'patternOrder must be string[]', 'patternOrder');
 
-  // effects: optional (backward compat) — validate if present, else default.
-  const effectsResult = validateEffects(data.effects);
-  if (!effectsResult.ok) return effectsResult;
-
   const song = data as unknown as Song;
+  // A pattern's own effects, else the song-wide ones (v1 files). Re-validated per
+  // pattern so each gets its own object rather than a shared one.
+  const effectsFor = (raw: unknown): EffectsParams => {
+    const result = validateEffects(raw === undefined ? data.effects : raw);
+    return result.ok ? result.value : createDefaultEffects();
+  };
+  // Migrate v1 -> v2: bpm/swing/effects move from the song into every pattern.
+  // Patterns that already carry their own keep them; the root fields are dropped.
   const normalized: Song = {
-    ...song,
+    schemaVersion: SCHEMA_VERSION,
+    name: song.name,
+    patternOrder: song.patternOrder,
     patterns: song.patterns.map((pat) => {
       const legacy = pat as unknown as Record<string, unknown>;
       const rawBl = pat.bassline ?? legacy.bass303;
-      const cleaned = { ...pat, bassline: normalizeBassline(rawBl), drums: normalizeDrums(pat.drums as unknown) };
+      const cleaned: Pattern = {
+        ...pat,
+        bpm: pat.bpm === undefined ? (rootBpm as number) : pat.bpm,
+        swing: pat.swing === undefined ? (rootSwing as number) : pat.swing,
+        bassline: normalizeBassline(rawBl),
+        drums: normalizeDrums(pat.drums as unknown),
+        effects: effectsFor(legacy.effects),
+      };
       delete (cleaned as unknown as Record<string, unknown>).bass303;
       return cleaned;
     }),
-    effects: effectsResult.value,
   };
   return ok(normalized);
 }

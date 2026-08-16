@@ -5,7 +5,7 @@ import type { Instrument } from './instrument';
 import { BasslineVoice } from './bassline';
 import { DrumMachine } from './drums';
 import { FxChain } from './effects';
-import { initialInstrumentParams } from './engine-helpers';
+import { initialPattern, patternInstrumentParams } from './engine-helpers';
 import { createWorkletBasslineFilter } from './bassline-worklet';
 import { DRUM_MACHINE_STYLES } from '../domain/constants';
 import type { Song } from '../domain/types';
@@ -26,9 +26,10 @@ export async function buildAudioGraph(ctx: BaseAudioContext, song: Song, pattern
   const fx = new FxChain(ctx);
   master.connect(fx.input);
   fx.connect(ctx.destination);
-  fx.apply(song.effects);
 
-  const { basslineParams, drumParams } = initialInstrumentParams(song, patternId);
+  const pattern = initialPattern(song, patternId);
+  fx.apply(pattern.effects);
+  const { basslineParams, drumParams } = patternInstrumentParams(pattern);
   // Build all worklet filters up front; only use them if EVERY voice got one, so
   // both basses share the same filter type (consistent pitch/tone).
   const workletFilters = await Promise.all(basslineParams.map(() => createWorkletBasslineFilter(ctx)));

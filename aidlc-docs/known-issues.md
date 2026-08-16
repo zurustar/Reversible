@@ -30,7 +30,28 @@
 返して失敗、修正後は 261.6Hz(=対象パターンの Tune +1200cents)。
 `npm run probe` の実測値は修正前後で一致(音の変化なし)。
 
-**残: 曲全体スコープのまま**: `bpm` / `swing` / `effects`(マスターエフェクト)。
+**続き(2026-08-16)**: 残っていた `bpm` / `swing` / `effects` もパターン単位にした(下記)。
+
+## ☑ bpm / swing / effects もパターン単位へ — 2026-08-16(GitHub #2 の続き)
+
+**変更**: `Pattern` に `bpm` / `swing` / `effects` を移動し、`Song` は `name` /
+`patterns` / `patternOrder` のみになった。**schemaVersion 1 → 2**。
+
+- 移行: v1(ルートに bpm/swing/effects)は読み込み時に全パターンへコピー。既存の
+  localStorage / エクスポート JSON はそのまま読める(`validator.ts`、テストあり)。
+- Scheduler はステップごとに再生中パターンの bpm/swing を読む → ソングチェーンで
+  **パターン境界ごとにテンポが変わる**。offline-render も各パターンのテンポでステップ時刻を積算。
+- `FxChain.apply(fx, when)` を時刻指定に対応。`WaveShaper.curve` は即時変更しかできないため、
+  Distortion は **Amount ごとに shaper を持ちゲインで切替**(スケジュール可能にする)。
+  同一設定オブジェクトの再適用は no-op なので毎ステップ呼んでよい。
+- UI: BPM / Swing / Effects は選択中パターンの設定を編集(title 属性とキャプションで明示)。
+
+**注意(仕様)**: BPM はパターンごとなので、曲全体のテンポを変えるには各パターンで設定する必要がある。
+「全パターンに適用」ボタンは未実装(必要なら追加する)。
+
+**回帰テスト**: `tests/unit/effects-schedule.test.ts`(実レンダリングで切替時刻の前後の音量差を検証)、
+`tests/unit/offline-render-params.test.ts`(チェーンのパターンごとのテンポ → バッファ長)、
+`tests/unit/validator.test.ts`(v1→v2 移行)。
 
 ## スライダーの効き(音質への影響)監査 — 2026-07-11(実測)
 

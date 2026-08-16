@@ -1,12 +1,16 @@
-/** Master effects chain (U2): distortion -> PCF -> delay -> compressor. */
+/** Master effects chain (U2): distortion -> PCF -> delay -> compressor.
+ * Effects settings belong to the pattern, so every stage can also SCHEDULE its
+ * change (`when`): the chain is shared, and the offline renderer schedules the
+ * whole song before rendering. */
 import type { EffectsParams } from '../domain/types';
 import { cutoffToHz, resonanceToQ } from './param-maps';
+import { setParamValue } from './automation';
 import { clamp01 } from '../util/num';
 
 interface Stage {
   input: AudioNode;
   output: AudioNode;
-  apply(fx: EffectsParams): void;
+  apply(fx: EffectsParams, when?: number): void;
 }
 
 function distortionCurve(amount: number): Float32Array {
@@ -24,20 +28,40 @@ function makeDistortion(ctx: BaseAudioContext): Stage {
   const input = ctx.createGain();
   const dry = ctx.createGain();
   const wet = ctx.createGain();
-  const shaper = ctx.createWaveShaper();
   const drive = ctx.createGain();
   const output = ctx.createGain();
   input.connect(dry).connect(output);
-  input.connect(drive).connect(shaper).connect(wet).connect(output);
+  input.connect(drive);
+  wet.connect(output);
+
+  // `WaveShaper.curve` can only be replaced immediately, which would leak one
+  // pattern's Amount into the whole offline render. So keep one shaper per Amount
+  // used and pick between them with (schedulable) gains.
+  const shapers = new Map<number, GainNode>();
+  function shaperGain(amount: number): GainNode {
+    const key = Math.round(clamp01(amount) * 100) / 100;
+    let gain = shapers.get(key);
+    if (!gain) {
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = distortionCurve(key);
+      gain = ctx.createGain();
+      gain.gain.value = 0;
+      drive.connect(shaper).connect(gain).connect(wet);
+      shapers.set(key, gain);
+    }
+    return gain;
+  }
+
   return {
     input,
     output,
-    apply(fx) {
+    apply(fx, when) {
       const d = fx.distortion;
-      shaper.curve = distortionCurve(d.amount);
-      drive.gain.value = 1 + clamp01(d.amount) * 3;
-      dry.gain.value = d.on ? 0 : 1;
-      wet.gain.value = d.on ? 0.9 : 0;
+      const active = shaperGain(d.amount);
+      for (const gain of shapers.values()) setParamValue(gain.gain, gain === active ? 1 : 0, when);
+      setParamValue(drive.gain, 1 + clamp01(d.amount) * 3, when);
+      setParamValue(dry.gain, d.on ? 0 : 1, when);
+      setParamValue(wet.gain, d.on ? 0.9 : 0, when);
     },
   };
 }
@@ -59,15 +83,15 @@ function makePcf(ctx: BaseAudioContext): Stage {
   return {
     input,
     output,
-    apply(fx) {
+    apply(fx, when) {
       const p = fx.pcf;
       const base = cutoffToHz(p.cutoff);
-      filter.frequency.value = base;
-      filter.Q.value = resonanceToQ(p.resonance);
-      lfo.frequency.value = 0.05 + clamp01(p.rate) * 12;
-      lfoGain.gain.value = clamp01(p.depth) * base * 0.9;
-      dry.gain.value = p.on ? 0 : 1;
-      wet.gain.value = p.on ? 1 : 0;
+      setParamValue(filter.frequency, base, when);
+      setParamValue(filter.Q, resonanceToQ(p.resonance), when);
+      setParamValue(lfo.frequency, 0.05 + clamp01(p.rate) * 12, when);
+      setParamValue(lfoGain.gain, clamp01(p.depth) * base * 0.9, when);
+      setParamValue(dry.gain, p.on ? 0 : 1, when);
+      setParamValue(wet.gain, p.on ? 1 : 0, when);
     },
   };
 }
@@ -87,11 +111,11 @@ function makeDelay(ctx: BaseAudioContext): Stage {
   return {
     input,
     output,
-    apply(fx) {
+    apply(fx, when) {
       const d = fx.delay;
-      delay.delayTime.value = 0.02 + clamp01(d.time) * 0.6;
-      fb.gain.value = clamp01(d.feedback) * 0.85;
-      wet.gain.value = d.on ? clamp01(d.mix) : 0;
+      setParamValue(delay.delayTime, 0.02 + clamp01(d.time) * 0.6, when);
+      setParamValue(fb.gain, clamp01(d.feedback) * 0.85, when);
+      setParamValue(wet.gain, d.on ? clamp01(d.mix) : 0, when);
     },
   };
 }
@@ -107,13 +131,13 @@ function makeCompressor(ctx: BaseAudioContext): Stage {
   return {
     input,
     output,
-    apply(fx) {
+    apply(fx, when) {
       const c = fx.compressor;
-      comp.threshold.value = -clamp01(c.amount) * 40;
-      comp.ratio.value = 1 + clamp01(c.amount) * 11;
-      comp.knee.value = 20;
-      dry.gain.value = c.on ? 0 : 1;
-      wet.gain.value = c.on ? 1 : 0;
+      setParamValue(comp.threshold, -clamp01(c.amount) * 40, when);
+      setParamValue(comp.ratio, 1 + clamp01(c.amount) * 11, when);
+      setParamValue(comp.knee, 20, when);
+      setParamValue(dry.gain, c.on ? 0 : 1, when);
+      setParamValue(wet.gain, c.on ? 1 : 0, when);
     },
   };
 }
@@ -122,6 +146,7 @@ export class FxChain {
   readonly input: AudioNode;
   private stages: Stage[];
   private tail: AudioNode;
+  private lastApplied: EffectsParams | null = null;
 
   constructor(ctx: BaseAudioContext) {
     this.stages = [makeDistortion(ctx), makePcf(ctx), makeDelay(ctx), makeCompressor(ctx)];
@@ -134,7 +159,12 @@ export class FxChain {
     this.tail.connect(destination);
   }
 
-  apply(fx: EffectsParams): void {
-    for (const s of this.stages) s.apply(fx);
+  /** Apply a pattern's effects settings. `when` schedules them (offline render).
+   * Re-applying the same settings object is a no-op, so playback can call this
+   * every step without churning the automation timelines. */
+  apply(fx: EffectsParams, when?: number): void {
+    if (fx === this.lastApplied) return;
+    this.lastApplied = fx;
+    for (const s of this.stages) s.apply(fx, when);
   }
 }

@@ -7,8 +7,8 @@
 ## 検証・制約ルール
 | ID | ルール | 関連 |
 |---|---|---|
-| BR-01 | `bpm` は常に `[20,300]` にクランプされる(範囲外入力もクラッシュしない) | US-02 GWT-3 |
-| BR-02 | `swing` は常に `[0,1]` にクランプ | US-06(将来) |
+| BR-01 | `bpm`(パターン単位)は常に `[20,300]` にクランプされる(範囲外入力もクラッシュしない) | US-02 GWT-3 |
+| BR-02 | `swing`(パターン単位)は常に `[0,1]` にクランプ | US-06(将来) |
 | BR-03 | 各トラックの `steps.length` は常に `STEP_COUNT(=16)`。編集で増減しない | FR-4.1 |
 | BR-04 | `BasslineStep.note` は整数かつ `[0,35]` にクランプ(3オクターブ = pitchClass + 12*octaveBand) | Q2=A |
 | BR-05 | 0..1 正規化パラメータ(bassline/ドラム)は `setParam` 後も常に `[0,1]` | US-09 |
@@ -41,7 +41,7 @@ Code Generation で fast-check により実装する不変条件。
 | ID | プロパティ | カテゴリ | 生成器(PBT-07) |
 |---|---|---|---|
 | P-01 | 任意の Action 列を適用後も、全トラックの `steps.length === 16` | Invariant(サイズ保存) | ランダムAction列(有効な index/voiceId/値) |
-| P-02 | 任意の実数 `x` に対し `setBpm(x)` 後、`state.bpm ∈ [20,300]` | Invariant(範囲) | 実数(極値・NaN近傍含む) |
+| P-02 | 任意の実数 `x` に対し `setBpm(x)` 後、選択中パターンの `bpm ∈ [20,300]` | Invariant(範囲) | 実数(極値・NaN近傍含む) |
 | P-03 | 任意の値に対し `setBasslineParam`/`setDrumParam` 後、正規化値 ∈ [0,1] | Invariant(範囲) | 実数(範囲外含む) |
 | P-04 | 任意の整数/実数 `n` に対し `setBasslineStep({note:n})` 後、`note ∈ [0,35]` かつ整数 | Invariant(範囲) | 整数・実数 |
 | P-05 | `toggleDrumStep` を同じ (voiceId,index) に2回適用すると元の `on` に戻る | Involution/不変 | voiceId∈集合, index∈[0,15] |
